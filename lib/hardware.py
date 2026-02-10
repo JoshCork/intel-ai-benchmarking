@@ -101,7 +101,7 @@ def detect_hardware(codename: str = "", tdp_class: str = "") -> HardwareFingerpr
     # Count memory channels from DMI slots
     slots_used = _run(
         "sudo dmidecode -t memory 2>/dev/null | grep -c 'Size:.*[0-9]' || echo 0"
-    )
+    ).split("\n")[0].strip()
     hw.mem_channels = int(slots_used or "0")
 
     # GPU
