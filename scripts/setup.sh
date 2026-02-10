@@ -15,14 +15,20 @@ echo "OS: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2)"
 echo ""
 
 # --- System packages ---
-echo "[1/5] Installing system packages..."
-if command -v apt-get &> /dev/null; then
-    sudo apt-get update -qq
-    sudo apt-get install -y -qq python3 python3-pip python3-venv git
-elif command -v dnf &> /dev/null; then
-    sudo dnf install -y python3 python3-pip git
+echo "[1/5] Checking system packages..."
+if ! command -v python3 &> /dev/null; then
+    echo "Python 3 not found. Installing system packages (requires sudo)..."
+    if command -v apt-get &> /dev/null; then
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq python3 python3-pip python3-venv git
+    elif command -v dnf &> /dev/null; then
+        sudo dnf install -y python3 python3-pip git
+    else
+        echo "ERROR: Python 3 not found and unknown package manager."
+        exit 1
+    fi
 else
-    echo "WARNING: Unknown package manager. Ensure Python 3.10+ is installed."
+    echo "  Python 3 found: $(python3 --version)"
 fi
 
 # --- Python venv ---
