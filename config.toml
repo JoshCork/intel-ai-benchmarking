@@ -1,0 +1,53 @@
+# Intel AI Benchmarking — Default Configuration
+# Override per-machine with config.local.toml (gitignored)
+
+[benchmark]
+warmup_runs = 3
+measured_runs = 10
+temperatures = [0.0, 0.7]
+max_new_tokens = 256
+
+[model]
+# Default model to benchmark
+name = "meta-llama/Llama-3.1-8B-Instruct"
+# Precisions to test (OpenVINO IR format)
+precisions = ["FP16", "INT8", "INT4"]
+# Where to look for models (checked in order)
+usb_model_dir = "intel-ai-models"          # folder name on USB root
+local_model_dir = "~/models/intel-bench"    # local cache
+
+[database]
+# Central SQLite on friday-cork (Tailscale-accessible)
+path = "/home/friday/intel-bench/results/benchmarks.db"
+# Local fallback if central DB unreachable
+local_path = "results/benchmarks.db"
+
+[machines]
+# Known machines and their SSH access
+[machines.friday-cork]
+host = "friday-cork"
+user = "friday"
+codename = "ADL"
+tdp_class = "45W"
+
+[machines.lnl-grove]
+host = "LNL-GROVE.local"
+user = "grove"
+codename = "LNL"
+tdp_class = "17W"
+
+[machines.mtl-noyce]
+host = "MTL-NOYCE.local"
+user = "noyce"
+codename = "MTL"
+tdp_class = "28W"
+
+[system_prompt]
+# Kiosk-style system prompt for realistic benchmarking
+text = """You are a helpful kiosk assistant at a retail location. You help customers with:
+- Finding products and checking availability
+- Answering questions about store policies (returns, hours, etc.)
+- Providing directions within the store
+- Assisting with loyalty program inquiries
+
+Be concise, friendly, and professional. Keep responses under 3 sentences unless the customer asks for details."""
