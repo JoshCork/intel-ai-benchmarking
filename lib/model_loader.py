@@ -139,7 +139,7 @@ def download_and_export(
 
     cmd = [
         "optimum-cli", "export", "openvino",
-        "--model", model_name,
+        "-m", model_name,
         "--weight-format", weight_fmt,
         str(output_path),
     ]

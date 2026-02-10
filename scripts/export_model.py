@@ -42,8 +42,8 @@ def export_model(model_name: str, precision: str, output_dir: str) -> Path:
     }[precision]
 
     cmd = [
-        sys.executable, "-m", "optimum.exporters.openvino",
-        "--model", model_name,
+        "optimum-cli", "export", "openvino",
+        "-m", model_name,
         "--weight-format", weight_fmt,
         str(out_path),
     ]
