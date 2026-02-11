@@ -106,68 +106,71 @@ def parse_perfspect_json(json_path: Path) -> dict:
         "insights": [],
     }
 
-    # PerfSpect JSON is organized as sections, each with key-value tables
-    for section in data:
-        section_name = section.get("category", "")
-        fields = section.get("fields", [])
+    # PerfSpect JSON is a dict: { "SectionName": [list of record dicts], ... }
+    # Each section contains a list of dicts with named keys.
 
-        if section_name == "Software Version":
-            for f in fields:
-                if f.get("field_name") == "PerfSpect Version":
-                    result["perfspect_version"] = f.get("field_value", "")
+    # PerfSpect version
+    if "PerfSpect" in data and data["PerfSpect"]:
+        ps = data["PerfSpect"][0]
+        result["perfspect_version"] = ps.get("Version", "")
 
-        elif section_name == "Power":
-            for f in fields:
-                name = f.get("field_name", "")
-                value = f.get("field_value", "")
-                if "scaling_governor" in name.lower() or "Scaling Governor" in name:
-                    result["scaling_governor"] = value
-                elif "energy" in name.lower() and "perf" in name.lower():
-                    result["energy_perf_bias"] = value
-                elif "turbo" in name.lower():
-                    result["turbo_boost"] = value
+    # Power settings
+    if "Power" in data and data["Power"]:
+        power = data["Power"][0]
+        result["scaling_governor"] = power.get("Scaling Governor", "")
+        result["energy_perf_bias"] = power.get("Energy Performance Bias", "")
+        result["turbo_boost"] = power.get("Turbo Boost", power.get("TDP", ""))
 
-        elif section_name == "C-state":
-            # Collect active C-states
-            states = []
-            for f in fields:
-                name = f.get("field_name", "")
-                if name and "%" not in name:
-                    states.append(name)
-            if states:
-                result["c_states"] = ",".join(states)
+    # C-states
+    if "C-state" in data:
+        states = [cs.get("Name", "") for cs in data["C-state"]
+                  if cs.get("Status", "").lower() == "enabled"]
+        result["c_states"] = ",".join(states)
 
-        elif section_name == "DIMM" or section_name == "Memory":
-            for f in fields:
-                name = f.get("field_name", "")
-                value = f.get("field_value", "")
-                if "installed" in name.lower() or "total" in name.lower():
-                    result["installed_memory"] = value
+    # Memory — build summary from DIMM entries
+    if "DIMM" in data and data["DIMM"]:
+        dimms = data["DIMM"]
+        # Count populated DIMMs (have a size)
+        populated = [d for d in dimms if d.get("Size") and d["Size"] != "No Module Installed"]
+        if populated:
+            total_gb = 0
+            speed = ""
+            mem_type = ""
+            for d in populated:
+                size_str = d.get("Size", "")
+                if "GB" in size_str:
+                    try:
+                        total_gb += int(size_str.replace("GB", "").strip())
+                    except ValueError:
+                        pass
+                if not speed:
+                    speed = d.get("Configured Speed", "")
+                if not mem_type:
+                    mem_type = d.get("Type", "")
+            result["installed_memory"] = (
+                f"{total_gb}GB ({len(populated)}x{populated[0].get('Size', '?')} "
+                f"{mem_type} {speed})"
+            )
+    elif "Memory" in data and data["Memory"]:
+        mem = data["Memory"][0]
+        result["installed_memory"] = mem.get("Installed Memory", "")
 
-        elif section_name == "BIOS":
-            for f in fields:
-                name = f.get("field_name", "")
-                value = f.get("field_value", "")
-                if "version" in name.lower():
-                    result["bios_version"] = value
-                    break
+    # BIOS
+    if "BIOS" in data and data["BIOS"]:
+        bios = data["BIOS"][0]
+        result["bios_version"] = bios.get("Version", "")
 
-        elif section_name == "Operating System":
-            for f in fields:
-                name = f.get("field_name", "")
-                value = f.get("field_value", "")
-                if "kernel" in name.lower():
-                    result["kernel_version"] = value
+    # Operating System / Kernel
+    if "Operating System" in data and data["Operating System"]:
+        os_info = data["Operating System"][0]
+        result["kernel_version"] = os_info.get("Kernel", "")
 
-        elif section_name == "Insights":
-            # Capture recommendations
-            insights = []
-            for f in fields:
-                insights.append({
-                    "field": f.get("field_name", ""),
-                    "value": f.get("field_value", ""),
-                })
-            result["insights"] = insights
+    # Insights (recommendations)
+    if "Insights" in data:
+        result["insights"] = [
+            {"field": i.get("Justification", ""), "value": i.get("Recommendation", "")}
+            for i in data["Insights"]
+        ]
 
     return result
 
