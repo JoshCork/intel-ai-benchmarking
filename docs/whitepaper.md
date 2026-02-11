@@ -12,7 +12,7 @@ This paper presents a standardized benchmarking methodology for evaluating large
 
 Our results demonstrate that INT4 quantization on an Intel Arc A770M discrete GPU achieves **31-33 tokens/sec** with greedy decoding — exceeding the 10 TPS interactive threshold by 3x — while maintaining conversational quality indistinguishable from FP16 inference. The full precision sweep across platforms reveals that **quantization yields proportionally larger gains on bandwidth-constrained iGPUs** (2.33x INT4/FP16 speedup on Lunar Lake vs 2.03x on Arc A770M).
 
-On integrated GPUs with INT4, **Lunar Lake (Xe2) achieves ~15 TPS** while **Meteor Lake (Xe-LPG) reaches only ~6.7 TPS** — a 2.2x gap explained by Lunar Lake's XMX matrix engines. At INT8, Lunar Lake hits **10.2 TPS** (at the kiosk target) while Meteor Lake drops to **5.2 TPS** — notably slower than its own INT4 CPU performance (5.4 TPS), demonstrating that without XMX, the GPU provides no advantage for larger model formats. NPU inference is not currently viable for autoregressive LLM workloads due to dynamic shape constraints in the Intel NPU compiler. Temperature-based sampling (0.7) introduces a ~26-33% throughput penalty on discrete GPUs but only ~4-6% on iGPUs.
+On integrated GPUs with INT4, **Lunar Lake (Xe2) achieves ~15 TPS** while **Meteor Lake (Xe-LPG) reaches only ~6.7 TPS** — a 2.2x gap explained by Lunar Lake's XMX matrix engines. At FP16, Meteor Lake manages only **3.3 TPS** — every query takes 10-26 seconds, rendering it unusable for interactive applications. Remarkably, the INT4/FP16 speedup ratio is **2.03x on both Meteor Lake and Arc A770M**, suggesting this ratio is primarily determined by model size reduction rather than hardware architecture. Lunar Lake shows a higher ratio (2.33x) due to its tighter bandwidth constraint amplifying quantization benefits. NPU inference is not currently viable for autoregressive LLM workloads due to dynamic shape constraints in the Intel NPU compiler. Temperature-based sampling (0.7) introduces a ~26-33% throughput penalty on discrete GPUs but only ~4-6% on iGPUs.
 
 ---
 
@@ -41,7 +41,7 @@ We target a **retail kiosk assistant** — an interactive terminal where custome
 |---------|-----|----------|-----|----------|-----|-----|
 | friday-cork | 12th Gen Intel Core i7-12700H | ADL (Alder Lake) | Intel Arc A770M (16GB GDDR6) | Discrete (Xe-HPG) | 45W CPU / 120-150W TGP | 62 GB DDR4 |
 | LNL-GROVE | Intel Core Ultra 7 258V | LNL (Lunar Lake) | Intel Arc 140V (Xe2-LPG, integrated) | Integrated | 17W SoC | 31 GB LPDDR5X-8533 |
-| MTL-NOYCE | Intel Core Ultra 5 125H | MTL (Meteor Lake) | Intel Arc (Xe-LPG, integrated) | Integrated | 28W SoC | 15 GB LPDDR5X-7467 |
+| MTL-NOYCE | Intel Core Ultra 5 125H | MTL (Meteor Lake) | Intel Arc (Xe-LPG, integrated) | Integrated | 28W SoC | 62 GB DDR5-5600 |
 
 All machines run Ubuntu 24.04 LTS with OpenVINO 2025.4.1, Python 3.12, and the Intel GPU compute runtime (NEO).
 
@@ -52,10 +52,10 @@ All machines run Ubuntu 24.04 LTS with OpenVINO 2025.4.1, Python 3.12, and the I
 | **Xe Cores** | 32 | 8 | 8 |
 | **XMX Matrix Engines** | 512 | 64 (8/core) | **None** |
 | **INT8 TOPS (GPU)** | 223 | 67 | 18 (vector only) |
-| **Memory Type** | 16 GB GDDR6 (dedicated) | LPDDR5X-8533 (shared) | LPDDR5X-7467 (shared) |
+| **Memory Type** | 16 GB GDDR6 (dedicated) | LPDDR5X-8533 (shared) | DDR5-5600 (shared) |
 | **Memory Bus** | 256-bit | 128-bit | 128-bit |
-| **Theoretical Bandwidth** | ~512 GB/s | ~136.5 GB/s | ~119.5 GB/s |
-| **Effective Bandwidth** | ~400+ GB/s | ~95-110 GB/s | ~80-87 GB/s |
+| **Theoretical Bandwidth** | ~512 GB/s | ~136.5 GB/s | ~89.6 GB/s |
+| **Effective Bandwidth** | ~400+ GB/s | ~95-110 GB/s | ~60-70 GB/s |
 | **NPU** | N/A | NPU4 (48 TOPS) | NPU3 (11 TOPS) |
 
 **Key architectural difference**: Meteor Lake's iGPU **lacks XMX matrix engines** entirely — all INT8/INT4 computation runs on standard vector units via DP4a instructions. Lunar Lake's Xe2 introduces XMX to the iGPU for the first time, providing ~3.7x the INT8 AI compute at the same core count. The Arc A770M has 4x the Xe cores *and* XMX, giving it overwhelming compute density.
@@ -66,9 +66,9 @@ All machines run Ubuntu 24.04 LTS with OpenVINO 2025.4.1, Python 3.12, and the I
 |----------|-------------|---------------------------|-------------|------------|
 | Arc A770M | ~400 GB/s | ~114 TPS | 31.6 TPS | ~28% |
 | Lunar Lake iGPU | ~100 GB/s | ~29 TPS | 14.9 TPS | ~51% |
-| Meteor Lake iGPU | ~80 GB/s | ~23 TPS | 6.7 TPS | ~29% |
+| Meteor Lake iGPU | ~65 GB/s | ~19 TPS | 6.7 TPS | ~35% |
 
-Lunar Lake achieves the highest memory bandwidth efficiency (51%) likely due to on-package LPDDR5X providing lower latency. Meteor Lake's poor efficiency (29%) despite reasonable bandwidth reflects the compute bottleneck from missing XMX engines — the vector-only pipeline cannot saturate available bandwidth for INT4 matrix operations.
+Lunar Lake achieves the highest memory bandwidth efficiency (51%) likely due to on-package LPDDR5X providing lower latency. Meteor Lake's moderate efficiency (35%) reflects the compute bottleneck from missing XMX engines — the vector-only pipeline cannot fully saturate available bandwidth for INT4 matrix operations.
 
 ---
 
@@ -622,8 +622,10 @@ Quantization delivers a **larger speedup on shared-memory iGPUs** than on dedica
 
 ## 6. Results — Intel Meteor Lake iGPU (MTL-NOYCE)
 
-**Machine**: Intel Core Ultra 5 125H, 15 GB LPDDR5X-7467, Ubuntu 24.04
+**Machine**: Intel Core Ultra 5 125H, 62 GB DDR5-5600, Ubuntu 24.04
 **OpenVINO**: 2025.4.1 | **GPU**: Intel Arc (Xe-LPG, 8 Xe cores, **no XMX**) | **NPU**: Meteor Lake NPU3
+
+> **Note**: MTL-NOYCE was upgraded from 15 GB to 62 GB DDR5-5600 during testing. INT4 and INT8 benchmarks were collected on the original 15 GB configuration. FP16 benchmarks required the RAM upgrade (the 15 GB FP16 model could not fit alongside OS/runtime in 15 GB). The DDR5-5600 provides ~89.6 GB/s theoretical bandwidth (lower than LPDDR5X), but the key architectural limitation — no XMX engines — remains the dominant factor in performance.
 
 ### 6.1 INT4 Performance — CPU vs GPU
 
@@ -702,16 +704,45 @@ Same dynamic shape error as Lunar Lake. See Section 5.1 NPU analysis.
 - Sampling: **4.9 TPS mean** — minimal penalty vs greedy, consistent with other iGPU patterns
 - **INT8 GPU is slower than INT4 CPU** on Meteor Lake (5.2 vs 5.4 TPS) — a remarkable finding that demonstrates the GPU provides no advantage when: (a) the model is larger (7.5 vs 5.2 GB), (b) bandwidth is shared, and (c) no XMX engines accelerate the matrix ops
 
-### 6.3 Precision Comparison (MTL-NOYCE, GPU, Greedy)
+### 6.3 FP16 Performance — GPU
 
-| Precision | Model Size | Greedy TPS | Speedup vs INT8 | vs Kiosk Target |
+> *Collected after RAM upgrade to 62 GB DDR5-5600. The 15 GB FP16 model could not fit in the original 15 GB configuration.*
+
+| Scenario | Temp | TPS Mean | TPS Median | TPS P5 | TPS P95 | TTFT Mean | Total Mean | Avg Tokens |
+|----------|------|----------|------------|--------|---------|-----------|------------|------------|
+| greeting | 0.0 | 2.1 | 2.1 | 2.1 | 2.2 | 0.7 ms | 6,145 ms | 13 |
+| store_hours | 0.0 | 3.7 | 3.7 | 3.7 | 3.8 | 1.0 ms | 10,519 ms | 39 |
+| product_lookup | 0.0 | 3.1 | 3.1 | 3.1 | 3.1 | 1.0 ms | 16,540 ms | 51 |
+| return_policy | 0.0 | 3.7 | 3.7 | 3.6 | 3.7 | 0.9 ms | 19,644 ms | 72 |
+| loyalty_program | 0.0 | 3.3 | 3.3 | 3.3 | 3.3 | 1.0 ms | 23,262 ms | 77 |
+| multi_turn_directions | 0.0 | 3.8 | 3.8 | 3.7 | 3.8 | 1.0 ms | 13,521 ms | 51 |
+| multi_turn_troubleshoot | 0.0 | 3.5 | 3.5 | 3.4 | 3.5 | 0.7 ms | 14,670 ms | 51 |
+| | | | | | | | | |
+| greeting | 0.7 | 2.2 | 2.3 | 1.6 | 2.5 | 1.0 ms | 6,770 ms | 15 |
+| store_hours | 0.7 | 3.6 | 3.6 | 3.5 | 3.7 | 0.7 ms | 12,338 ms | 45 |
+| product_lookup | 0.7 | 3.2 | 3.2 | 3.0 | 3.3 | 0.8 ms | 20,369 ms | 65 |
+| return_policy | 0.7 | 3.4 | 3.4 | 3.3 | 3.6 | 0.7 ms | 20,678 ms | 71 |
+| loyalty_program | 0.7 | 3.0 | 3.0 | 2.9 | 3.1 | 0.7 ms | 26,184 ms | 78 |
+| multi_turn_directions | 0.7 | 3.4 | 3.4 | 3.4 | 3.5 | 1.1 ms | 15,031 ms | 51 |
+| multi_turn_troubleshoot | 0.7 | 3.0 | 3.1 | 2.8 | 3.2 | 0.7 ms | 15,636 ms | 48 |
+
+**Key findings — MTL GPU FP16:**
+- Greedy: **3.3 TPS mean** — the slowest GPU configuration across all platforms, 2x below the next-slowest (MTL INT8 at 5.2 TPS)
+- TTFT: <1ms — still sub-perceptible despite the massive model
+- The 15 GB FP16 model on DDR5-5600 (~90 GB/s bandwidth) yields a theoretical ceiling of ~6 TPS; achieving 3.3 TPS represents ~55% bandwidth efficiency, actually the highest of any MTL configuration — suggesting the compute overhead (no XMX) impacts smaller quantized models more than raw bandwidth-bound FP16
+- **Total latency is prohibitive**: Simple queries take 10-16 seconds, complex queries 20-26 seconds — unusable for interactive kiosk
+- INT4 quantization provides **2.03x speedup** over FP16 on Meteor Lake, identical to the Arc A770M ratio despite completely different architectural bottlenecks
+- Sampling penalty: ~6%, consistent with the bandwidth-bound regime of other iGPU configurations
+
+### 6.4 Precision Comparison (MTL-NOYCE, GPU, Greedy)
+
+| Precision | Model Size | Greedy TPS | Speedup vs FP16 | vs Kiosk Target |
 |-----------|-----------|-----------|------------------|-----------------|
-| INT8 | 7.5 GB | 5.2 | 1.0x (baseline) | 0.52x |
-| INT4 | 5.2 GB | 6.7 | **1.30x** | 0.67x |
+| FP16 | 15 GB | 3.3 | 1.0x (baseline) | 0.33x |
+| INT8 | 7.5 GB | 5.2 | **1.58x** | 0.52x |
+| INT4 | 5.2 GB | 6.7 | **2.03x** | 0.67x |
 
-*FP16 benchmarks deferred — MTL-NOYCE has only 15 GB RAM, insufficient for the 15 GB FP16 model plus OS/runtime overhead. RAM upgrade to 64 GB DDR5-5600 SODIMM planned.*
-
-Even with INT4, Meteor Lake's GPU cannot reach the 10 TPS kiosk target. The combination of shared bandwidth (~120 GB/s) and no XMX matrix engines creates a hard ceiling for LLM inference performance on this platform.
+Even with INT4, Meteor Lake's GPU cannot reach the 10 TPS kiosk target. The combination of limited bandwidth (~90 GB/s DDR5-5600) and no XMX matrix engines creates a hard ceiling for LLM inference on this platform. Notably, the INT4/FP16 speedup ratio (2.03x) matches the Arc A770M exactly, despite completely different architectural profiles — suggesting this ratio is primarily determined by the model size reduction (2.9x) and is relatively hardware-independent.
 
 ---
 
@@ -737,18 +768,19 @@ The three precision levels demonstrate clear throughput hierarchies, with quanti
 | INT8 | 7.5 GB | 10.2 | **1.59x** | 2.0x |
 | INT4 | 5.2 GB | 14.9 | **2.33x** | 2.9x |
 
-#### Meteor Lake iGPU (~120 GB/s shared LPDDR5X, no XMX)
+#### Meteor Lake iGPU (~90 GB/s DDR5-5600, no XMX)
 
-| Precision | Model Size | Greedy TPS | Speedup vs INT8 | Bandwidth Reduction |
+| Precision | Model Size | Greedy TPS | Speedup vs FP16 | Bandwidth Reduction |
 |-----------|-----------|-----------|------------------|---------------------|
-| INT8 | 7.5 GB | 5.2 | 1.0x (baseline) | — |
-| INT4 | 5.2 GB | 6.7 | **1.30x** | 1.4x |
+| FP16 | 15 GB | 3.3 | 1.0x (baseline) | — |
+| INT8 | 7.5 GB | 5.2 | **1.58x** | 2.0x |
+| INT4 | 5.2 GB | 6.7 | **2.03x** | 2.9x |
 
 LLM inference on GPUs is primarily **memory-bandwidth bound** during autoregressive decoding — each token requires reading all model weights once. Reducing weight precision directly reduces bandwidth requirements.
 
 **Quantization gains scale inversely with available bandwidth.** Lunar Lake's INT4/FP16 speedup (2.33x) exceeds the Arc A770M's (2.03x) because the shared LPDDR5X is the tighter constraint — every byte saved in model weights delivers proportionally more throughput.
 
-Meteor Lake shows the weakest INT4/INT8 speedup (1.30x) despite the same bandwidth reduction. Without XMX matrix engines, the GPU compute pipeline itself becomes a secondary bottleneck — the dequantization overhead for INT4 is proportionally larger on vector-only hardware.
+With the complete precision sweep now available, Meteor Lake shows an INT4/FP16 speedup of **2.03x** — identical to the Arc A770M despite having no XMX engines and completely different bandwidth characteristics. This suggests the ~2x INT4/FP16 ratio is driven primarily by the model size reduction (15→5.2 GB). Lunar Lake's higher ratio (2.33x) likely reflects its tighter memory bandwidth constraint where every byte saved has proportionally more impact.
 
 On the Arc A770M, INT8 achieves **1.67x** speedup with 2x bandwidth reduction — nearly linear scaling, indicating minimal dequantization overhead for 8-bit weights. INT4 achieves **2.03x** speedup with 2.9x bandwidth reduction — sub-linear scaling because:
 1. The INT4 model uses mixed precision (80% INT4, 20% INT8) — not pure INT4
@@ -799,6 +831,7 @@ Sampling (temperature=0.7, top_p=0.9) reduces throughput, but the penalty varies
 |-----------|-----------|--------------|-------|
 | INT4 | 6.7 | 6.4 | **-4%** |
 | INT8 | 5.2 | 4.9 | **-5%** |
+| FP16 | 3.3 | 3.1 | **-6%** |
 
 The **sampling penalty is 5-6x smaller on iGPUs** (~4-6%) compared to the discrete GPU (~26-33%). This is because the iGPU pipeline is already throughput-constrained by memory bandwidth — the CPU-side sampling overhead (softmax, top-p filtering, random sampling) occurs while the GPU is still feeding weights through the memory subsystem, effectively hiding the sampling latency.
 
@@ -836,7 +869,7 @@ All configurations achieve TTFT < 2ms — orders of magnitude below the 100ms pe
 |----------|----------|----------|----------|-----------------|
 | **Arc A770M** (friday-cork) | **31.6** | **26.1** | **15.6** | 2.03x |
 | **Lunar Lake** (LNL-GROVE) | **14.9** | **10.2** | **6.4** | 2.33x |
-| **Meteor Lake** (MTL-NOYCE) | **6.7** | **5.2** | *pending* | — |
+| **Meteor Lake** (MTL-NOYCE) | **6.7** | **5.2** | **3.3** | 2.03x |
 
 #### Architecture Comparison (INT4, Greedy)
 
@@ -844,7 +877,7 @@ All configurations achieve TTFT < 2ms — orders of magnitude below the 100ms pe
 |----------|-----------------|-----|-----------|---------|---------|---------------|----------|
 | **Arc A770M** (friday-cork) | Xe-HPG, 32 cores | 512 engines | ~512 GB/s dedicated | **31.6** | — | — | ~0.23 |
 | **Lunar Lake** (LNL-GROVE) | Xe2-LPG, 8 cores | 64 engines | ~136 GB/s shared | **14.9** | 8.0 | 1.86x | ~0.88 |
-| **Meteor Lake** (MTL-NOYCE) | Xe-LPG, 8 cores | **None** | ~120 GB/s shared | **6.7** | 5.4 | 1.24x | ~0.24 |
+| **Meteor Lake** (MTL-NOYCE) | Xe-LPG, 8 cores | **None** | ~90 GB/s shared | **6.7** | 5.4 | 1.24x | ~0.24 |
 
 **Key insights:**
 
@@ -899,7 +932,7 @@ This would place Panther Lake's iGPU performance in the range of **half an Arc A
 | MTL-NOYCE (Meteor Lake) | GPU | INT4 | **Complete** |
 | MTL-NOYCE (Meteor Lake) | GPU | INT8 | **Complete** |
 | MTL-NOYCE (Meteor Lake) | NPU | INT4 | **Failed** (dynamic shapes) |
-| MTL-NOYCE (Meteor Lake) | GPU | FP16 | **Deferred** — 15 GB RAM insufficient for 15 GB model |
+| MTL-NOYCE (Meteor Lake) | GPU | FP16 | **Complete** — after RAM upgrade to 62 GB DDR5-5600 |
 
 ---
 
@@ -945,9 +978,15 @@ python benchmark.py \
     --temperature 0.0 0.7 \
     --codename ADL \
     --tdp 45W
+
+# 4. (Optional) Capture system config with PerfSpect
+python benchmark.py --perfspect --precision INT4 --device GPU
+
+# Or just capture config without benchmarking
+python benchmark.py --perfspect-only
 ```
 
-Results are stored in a SQLite database for cross-machine comparison and historical tracking.
+Results are stored in a SQLite database for cross-machine comparison and historical tracking. System configurations (power governor, BIOS, memory, turbo boost) are optionally captured via Intel PerfSpect and linked to benchmark runs for full reproducibility.
 
 ---
 
@@ -968,4 +1007,4 @@ ORDER BY r.scenario_name, m.run_number;
 
 ---
 
-*This document is a living benchmark report. Results will be updated as additional hardware configurations and precision levels complete testing.*
+*All GPU benchmark configurations across three platforms and three precision levels are now complete. This document may be updated as additional hardware (e.g., Panther Lake) becomes available for testing.*
