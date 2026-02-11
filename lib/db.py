@@ -123,6 +123,23 @@ class BenchmarkDB:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self._init_schema()
 
+    @staticmethod
+    def connect(primary_path: str, fallback_path: str = "results/benchmarks.db") -> "BenchmarkDB":
+        """Connect to DB with fallback — try primary, fall back to local on failure."""
+        primary = Path(primary_path).expanduser()
+        try:
+            primary.parent.mkdir(parents=True, exist_ok=True)
+            db = BenchmarkDB(str(primary))
+            # Verify we can write (catches permission errors, read-only FS, etc.)
+            db.conn.execute("SELECT 1")
+            print(f"  Database: {primary} (primary)")
+            return db
+        except (PermissionError, OSError, sqlite3.OperationalError) as e:
+            fallback = Path(fallback_path).expanduser()
+            print(f"  Database: {primary} unavailable ({type(e).__name__})")
+            print(f"  Falling back to: {fallback}")
+            return BenchmarkDB(str(fallback))
+
     def _init_schema(self):
         self.conn.executescript(SCHEMA)
         self.conn.commit()

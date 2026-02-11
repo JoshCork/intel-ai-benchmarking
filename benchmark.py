@@ -45,7 +45,11 @@ from scenarios.kiosk import ALL_SCENARIOS, get_scenario
 def load_config(config_path: str = "config.toml") -> dict:
     """Load config, merging local overrides if present."""
     base = Path(config_path)
-    config = toml.load(base) if base.exists() else {}
+    if base.exists():
+        config = toml.load(base)
+    else:
+        print(f"  WARNING: Config not found at {base.resolve()}, using defaults")
+        config = {}
 
     local = base.with_suffix(".local.toml")
     if local.exists():
@@ -171,10 +175,19 @@ def main():
     measured_runs = args.runs or bench_cfg.get("measured_runs", 10)
     max_tokens = args.max_tokens or bench_cfg.get("max_new_tokens", 256)
     system_prompt = config.get("system_prompt", {}).get("text", "")
+    if not system_prompt:
+        print("  WARNING: No system prompt configured — model will use default behavior")
+        print("           (Set [system_prompt] text in config.toml)")
 
-    # Database
-    db_path = args.db or db_cfg.get("path", db_cfg.get("local_path", "results/benchmarks.db"))
-    db = BenchmarkDB(db_path)
+    # Database — CLI override uses direct path, otherwise try primary with fallback
+    if args.db:
+        db_path = args.db
+        db = BenchmarkDB(db_path)
+    else:
+        primary = db_cfg.get("path", "results/benchmarks.db")
+        fallback = db_cfg.get("local_path", "results/benchmarks.db")
+        db = BenchmarkDB.connect(primary, fallback)
+        db_path = str(db.db_path)
 
     # Results mode
     if args.results:
