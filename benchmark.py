@@ -22,6 +22,15 @@ Usage:
 
   # Show results table
   python benchmark.py --results
+
+  # Capture PerfSpect system config before benchmarking
+  python benchmark.py --perfspect
+
+  # Just capture PerfSpect config (no benchmarking)
+  python benchmark.py --perfspect-only
+
+  # Load an existing PerfSpect JSON report
+  python benchmark.py --perfspect-json ~/perfspect/perfspect_2026-02-10/LNL-GROVE.json
 """
 
 from __future__ import annotations
@@ -39,6 +48,10 @@ from lib.model_loader import find_model
 from lib.inference import OpenVINOLLM
 from lib.db import BenchmarkDB
 from lib.metrics import compute_aggregates, format_comparison_table
+from lib.perfspect import (
+    find_perfspect, run_perfspect, find_latest_report,
+    parse_perfspect_json, load_existing_report,
+)
 from scenarios.kiosk import ALL_SCENARIOS, get_scenario
 
 
@@ -159,6 +172,18 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Show plan without running")
     parser.add_argument("--results", action="store_true", help="Show results table and exit")
     parser.add_argument("--notes", default="", help="Notes for this benchmark run")
+    parser.add_argument(
+        "--perfspect", action="store_true",
+        help="Capture PerfSpect system config before benchmarking"
+    )
+    parser.add_argument(
+        "--perfspect-only", action="store_true",
+        help="Capture PerfSpect config and exit (no benchmarking)"
+    )
+    parser.add_argument(
+        "--perfspect-json", type=str,
+        help="Load an existing PerfSpect JSON report instead of running live"
+    )
     args = parser.parse_args()
 
     # Load config
@@ -214,6 +239,50 @@ def main():
     print()
 
     machine_id = db.upsert_machine(hw)
+
+    # PerfSpect system config capture
+    system_config_id = None
+    if args.perfspect or args.perfspect_only or args.perfspect_json:
+        print("=== PerfSpect System Config ===")
+        if args.perfspect_json:
+            # Load existing report
+            print(f"  Loading report: {args.perfspect_json}")
+            perfspect_data = load_existing_report(args.perfspect_json)
+        else:
+            # Run PerfSpect live
+            perfspect = find_perfspect()
+            if perfspect:
+                json_path = run_perfspect()
+                if json_path:
+                    print(f"  Report: {json_path}")
+                    perfspect_data = parse_perfspect_json(json_path)
+                else:
+                    print("  PerfSpect run failed — continuing without config")
+                    perfspect_data = None
+            else:
+                print("  PerfSpect not installed at ~/perfspect/ — skipping")
+                perfspect_data = None
+
+        if perfspect_data:
+            system_config_id = db.save_system_config(machine_id, perfspect_data)
+            print(f"  Config saved (id={system_config_id})")
+            gov = perfspect_data.get("scaling_governor", "unknown")
+            mem = perfspect_data.get("installed_memory", "unknown")
+            print(f"  Governor: {gov}")
+            print(f"  Memory: {mem}")
+            if perfspect_data.get("insights"):
+                print(f"  Insights: {len(perfspect_data['insights'])} recommendations")
+        print()
+
+        if args.perfspect_only:
+            print("(perfspect-only mode — exiting)")
+            db.close()
+            return
+    else:
+        # Check if we have a recent config for this machine (within 24h)
+        system_config_id = db.get_latest_config(machine_id)
+        if system_config_id:
+            print(f"  Using recent system config (id={system_config_id})")
 
     # Plan
     total_combos = len(precisions) * len(temperatures) * len(scenarios)
@@ -277,6 +346,7 @@ def main():
                     measured_runs=measured_runs,
                     model_source=model_info.source,
                     notes=args.notes,
+                    system_config_id=system_config_id,
                 )
 
                 metrics = run_benchmark(

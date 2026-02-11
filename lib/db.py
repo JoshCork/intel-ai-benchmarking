@@ -106,10 +106,35 @@ CREATE TABLE IF NOT EXISTS run_aggregates (
     avg_output_tokens REAL
 );
 
+CREATE TABLE IF NOT EXISTS system_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    machine_id INTEGER NOT NULL REFERENCES machines(id),
+    captured_at TEXT NOT NULL,
+    perfspect_version TEXT,
+    -- Key fields extracted for easy querying
+    scaling_governor TEXT,
+    energy_perf_bias TEXT,
+    turbo_boost TEXT,
+    c_states TEXT,              -- comma-separated: "POLL,C1_ACPI,C2_ACPI,C3_ACPI"
+    installed_memory TEXT,      -- e.g. "32GB (8x4GB LPDDR5 8533MT/s)"
+    bios_version TEXT,
+    kernel_version TEXT,
+    -- Full data
+    perfspect_json TEXT,        -- complete PerfSpect JSON for reproducibility
+    insights_json TEXT          -- PerfSpect recommendations
+);
+
 CREATE INDEX IF NOT EXISTS idx_run_metrics_run_id ON run_metrics(run_id);
 CREATE INDEX IF NOT EXISTS idx_benchmark_runs_machine ON benchmark_runs(machine_id);
 CREATE INDEX IF NOT EXISTS idx_benchmark_runs_model ON benchmark_runs(model_name, model_precision);
+CREATE INDEX IF NOT EXISTS idx_system_configs_machine ON system_configs(machine_id);
 """
+
+# Migration for existing DBs — adds system_config_id to benchmark_runs
+MIGRATIONS = [
+    """ALTER TABLE benchmark_runs ADD COLUMN system_config_id INTEGER
+       REFERENCES system_configs(id)""",
+]
 
 
 class BenchmarkDB:
@@ -143,6 +168,17 @@ class BenchmarkDB:
     def _init_schema(self):
         self.conn.executescript(SCHEMA)
         self.conn.commit()
+        self._run_migrations()
+
+    def _run_migrations(self):
+        """Apply pending migrations (idempotent — skips already-applied)."""
+        for sql in MIGRATIONS:
+            try:
+                self.conn.execute(sql)
+                self.conn.commit()
+            except sqlite3.OperationalError:
+                # Already applied (e.g. column already exists)
+                pass
 
     def close(self):
         self.conn.close()
@@ -196,6 +232,7 @@ class BenchmarkDB:
         measured_runs: int = 10,
         model_source: str = "",
         notes: str = "",
+        system_config_id: Optional[int] = None,
     ) -> int:
         """Create a new benchmark run, return run_id."""
         cursor = self.conn.execute(
@@ -203,8 +240,9 @@ class BenchmarkDB:
             (machine_id, model_name, model_precision, model_source,
              scenario_name, scenario_type, system_prompt,
              temperature, max_new_tokens, target_device,
-             warmup_runs, measured_runs, started_at, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             warmup_runs, measured_runs, started_at, notes,
+             system_config_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 machine_id, model_name, model_precision, model_source,
                 scenario_name, scenario_type, system_prompt,
@@ -212,6 +250,7 @@ class BenchmarkDB:
                 warmup_runs, measured_runs,
                 datetime.now(timezone.utc).isoformat(),
                 notes,
+                system_config_id,
             ),
         )
         self.conn.commit()
@@ -281,6 +320,61 @@ class BenchmarkDB:
             ),
         )
         self.conn.commit()
+
+    # -- System Configs --
+
+    def save_system_config(
+        self,
+        machine_id: int,
+        perfspect_data: dict,
+    ) -> int:
+        """Store a PerfSpect system config snapshot, return config_id."""
+        cursor = self.conn.execute(
+            """INSERT INTO system_configs
+            (machine_id, captured_at, perfspect_version,
+             scaling_governor, energy_perf_bias, turbo_boost, c_states,
+             installed_memory, bios_version, kernel_version,
+             perfspect_json, insights_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                machine_id,
+                datetime.now(timezone.utc).isoformat(),
+                perfspect_data.get("perfspect_version", ""),
+                perfspect_data.get("scaling_governor", ""),
+                perfspect_data.get("energy_perf_bias", ""),
+                perfspect_data.get("turbo_boost", ""),
+                perfspect_data.get("c_states", ""),
+                perfspect_data.get("installed_memory", ""),
+                perfspect_data.get("bios_version", ""),
+                perfspect_data.get("kernel_version", ""),
+                json.dumps(perfspect_data.get("full_json")) if perfspect_data.get("full_json") else None,
+                json.dumps(perfspect_data.get("insights")) if perfspect_data.get("insights") else None,
+            ),
+        )
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def get_latest_config(self, machine_id: int, max_age_hours: int = 24) -> Optional[int]:
+        """Get the latest system config for a machine if captured within max_age_hours."""
+        row = self.conn.execute(
+            """SELECT id, captured_at FROM system_configs
+               WHERE machine_id = ?
+               ORDER BY captured_at DESC LIMIT 1""",
+            (machine_id,),
+        ).fetchone()
+        if not row:
+            return None
+
+        captured = datetime.fromisoformat(row["captured_at"])
+        now = datetime.now(timezone.utc)
+        # Handle naive timestamps (old data without timezone)
+        if captured.tzinfo is None:
+            from datetime import timezone as tz
+            captured = captured.replace(tzinfo=tz.utc)
+        age_hours = (now - captured).total_seconds() / 3600
+        if age_hours <= max_age_hours:
+            return row["id"]
+        return None
 
     # -- Queries --
 
