@@ -23,10 +23,29 @@ from pathlib import Path
 PRECISIONS = ["FP16", "INT8", "INT4"]
 
 
-def export_model(model_name: str, precision: str, output_dir: str) -> Path:
-    """Export a model to OpenVINO IR format using optimum-cli."""
+def export_model(
+    model_name: str,
+    precision: str,
+    output_dir: str,
+    algorithm: str = "default",
+    dataset: str = "wikitext2",
+    group_size: int = 128,
+    num_samples: int = 128,
+    suffix: str = "",
+) -> Path:
+    """Export a model to OpenVINO IR format using optimum-cli.
+
+    Args:
+        algorithm: Quantization algorithm — "default" (AWQ), "gptq", or "scale-estimation".
+                   Only applies to INT4 precision.
+        dataset: Calibration dataset for GPTQ/scale-estimation.
+        group_size: Quantization group size for GPTQ.
+        num_samples: Number of calibration samples for GPTQ.
+        suffix: Appended to output dir name (e.g. "-gptq" → "Llama-3.1-8B-Instruct-INT4-gptq").
+    """
     short_name = model_name.split("/")[-1]
-    out_path = Path(output_dir).expanduser() / f"{short_name}-{precision}"
+    dir_name = f"{short_name}-{precision}{suffix}"
+    out_path = Path(output_dir).expanduser() / dir_name
 
     if out_path.exists() and list(out_path.glob("*.xml")):
         print(f"  Model already exists: {out_path}")
@@ -45,14 +64,27 @@ def export_model(model_name: str, precision: str, output_dir: str) -> Path:
         "optimum-cli", "export", "openvino",
         "-m", model_name,
         "--weight-format", weight_fmt,
-        str(out_path),
     ]
 
-    print(f"\n  Exporting {model_name} → {precision}...")
+    # Add GPTQ/scale-estimation flags for INT4
+    if algorithm != "default" and precision == "INT4":
+        if algorithm in ("gptq", "scale-estimation"):
+            cmd.extend(["--gptq", "--scale-estimation"])
+        cmd.extend(["--dataset", dataset])
+        cmd.extend(["--group-size", str(group_size)])
+        cmd.extend(["--num-samples", str(num_samples)])
+
+    cmd.append(str(out_path))
+
+    print(f"\n  Exporting {model_name} → {precision}{suffix}...")
+    if algorithm != "default":
+        print(f"  Algorithm: {algorithm} (dataset={dataset}, group_size={group_size}, samples={num_samples})")
     print(f"  Command: {' '.join(cmd)}")
     print(f"  Output:  {out_path}")
 
-    result = subprocess.run(cmd, timeout=7200)  # 2 hour timeout
+    # GPTQ needs more time — 4h timeout
+    timeout = 14400 if algorithm != "default" else 7200
+    result = subprocess.run(cmd, timeout=timeout)
     if result.returncode != 0:
         print(f"  ERROR: Export failed with code {result.returncode}")
         return out_path
@@ -88,6 +120,27 @@ def main():
         "--copy-to-usb", action="store_true",
         help="After export, copy to attached USB drive"
     )
+    parser.add_argument(
+        "--algorithm", default="default",
+        choices=["default", "gptq", "scale-estimation"],
+        help="Quantization algorithm for INT4 (default: AWQ-based default)"
+    )
+    parser.add_argument(
+        "--dataset", default="wikitext2",
+        help="Calibration dataset for GPTQ/scale-estimation (default: wikitext2)"
+    )
+    parser.add_argument(
+        "--group-size", type=int, default=128,
+        help="Quantization group size for GPTQ (default: 128)"
+    )
+    parser.add_argument(
+        "--num-samples", type=int, default=128,
+        help="Number of calibration samples for GPTQ (default: 128)"
+    )
+    parser.add_argument(
+        "--suffix", default="",
+        help="Suffix for output dir name (e.g. '-gptq' → Llama-3.1-8B-Instruct-INT4-gptq)"
+    )
     args = parser.parse_args()
 
     precisions = PRECISIONS if args.precision.lower() == "all" else [args.precision.upper()]
@@ -95,9 +148,21 @@ def main():
     print(f"Model: {args.model}")
     print(f"Precisions: {precisions}")
     print(f"Output: {args.output_dir}")
+    if args.algorithm != "default":
+        print(f"Algorithm: {args.algorithm}")
+        print(f"Dataset: {args.dataset}, Group size: {args.group_size}, Samples: {args.num_samples}")
+    if args.suffix:
+        print(f"Suffix: {args.suffix}")
 
     for prec in precisions:
-        out_path = export_model(args.model, prec, args.output_dir)
+        out_path = export_model(
+            args.model, prec, args.output_dir,
+            algorithm=args.algorithm,
+            dataset=args.dataset,
+            group_size=args.group_size,
+            num_samples=args.num_samples,
+            suffix=args.suffix,
+        )
 
         if args.copy_to_usb:
             # Import here to avoid circular deps

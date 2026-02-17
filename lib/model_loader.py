@@ -50,22 +50,26 @@ class ModelInfo:
         return self.openvino_xml is not None and self.path.exists()
 
 
-def _model_dir_name(model_name: str, precision: str) -> str:
+def _model_dir_name(model_name: str, precision: str, suffix: str = "") -> str:
     """Convert model name + precision to expected directory name.
 
-    e.g. "meta-llama/Llama-3.1-8B-Instruct" + "INT4"
+    e.g. "meta-llama/Llama-3.1-8B-Instruct" + "INT4" + ""
     → "Llama-3.1-8B-Instruct-INT4"
+
+    e.g. "meta-llama/Llama-3.1-8B-Instruct" + "INT4" + "-gptq"
+    → "Llama-3.1-8B-Instruct-INT4-gptq"
     """
     short = model_name.split("/")[-1]
-    return f"{short}-{precision}"
+    return f"{short}-{precision}{suffix}"
 
 
 def _find_on_usb(
-    model_name: str, precision: str, usb_folder: str = "intel-ai-models"
+    model_name: str, precision: str, usb_folder: str = "intel-ai-models",
+    suffix: str = "",
 ) -> Optional[ModelInfo]:
     """Search mounted USB drives for the model."""
     user = os.environ.get("USER", os.environ.get("LOGNAME", ""))
-    dir_name = _model_dir_name(model_name, precision)
+    dir_name = _model_dir_name(model_name, precision, suffix)
 
     for pattern in USB_MOUNT_PATHS:
         base = pattern.format(user=user)
@@ -89,11 +93,12 @@ def _find_on_usb(
 
 
 def _find_local(
-    model_name: str, precision: str, local_dir: str = "~/models/intel-bench"
+    model_name: str, precision: str, local_dir: str = "~/models/intel-bench",
+    suffix: str = "",
 ) -> Optional[ModelInfo]:
     """Check local cache directory."""
     base = Path(local_dir).expanduser()
-    dir_name = _model_dir_name(model_name, precision)
+    dir_name = _model_dir_name(model_name, precision, suffix)
     model_path = base / dir_name
 
     if model_path.is_dir():
@@ -113,6 +118,7 @@ def download_and_export(
     model_name: str,
     precision: str,
     local_dir: str = "~/models/intel-bench",
+    suffix: str = "",
 ) -> ModelInfo:
     """Download from HuggingFace and export to OpenVINO IR.
 
@@ -120,7 +126,7 @@ def download_and_export(
       optimum-cli export openvino --model <name> --weight-format <fmt> <output>
     """
     base = Path(local_dir).expanduser()
-    dir_name = _model_dir_name(model_name, precision)
+    dir_name = _model_dir_name(model_name, precision, suffix)
     output_path = base / dir_name
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -166,6 +172,7 @@ def find_model(
     usb_folder: str = "intel-ai-models",
     local_dir: str = "~/models/intel-bench",
     auto_download: bool = True,
+    suffix: str = "",
 ) -> ModelInfo:
     """Find a model, searching USB → local → download.
 
@@ -175,26 +182,27 @@ def find_model(
         usb_folder: Folder name to look for on USB drives
         local_dir: Local cache directory
         auto_download: If True, download from HuggingFace when not found locally
+        suffix: Model directory suffix (e.g. "-gptq" for alternate quantization)
     """
     # 1. USB
-    info = _find_on_usb(model_name, precision, usb_folder)
+    info = _find_on_usb(model_name, precision, usb_folder, suffix=suffix)
     if info:
         print(f"Found model on USB: {info.path}")
         return info
 
     # 2. Local cache
-    info = _find_local(model_name, precision, local_dir)
+    info = _find_local(model_name, precision, local_dir, suffix=suffix)
     if info:
         print(f"Found model locally: {info.path}")
         return info
 
     # 3. Download
     if auto_download:
-        print(f"Model not found locally. Downloading {model_name} ({precision})...")
-        return download_and_export(model_name, precision, local_dir)
+        print(f"Model not found locally. Downloading {model_name} ({precision}{suffix})...")
+        return download_and_export(model_name, precision, local_dir, suffix=suffix)
 
     raise FileNotFoundError(
-        f"Model {model_name} ({precision}) not found on USB or local disk. "
+        f"Model {model_name} ({precision}{suffix}) not found on USB or local disk. "
         f"Run with --download to fetch from HuggingFace."
     )
 

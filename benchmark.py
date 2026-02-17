@@ -189,7 +189,29 @@ def main():
         "--perfspect-json", type=str,
         help="Load an existing PerfSpect JSON report instead of running live"
     )
+    parser.add_argument(
+        "--ov-config", type=str, default=None,
+        help="OpenVINO runtime config flags (format: KEY=VALUE,KEY=VALUE). "
+             "Example: KV_CACHE_PRECISION=u8,DYNAMIC_QUANTIZATION_GROUP_SIZE=64,PERFORMANCE_HINT=LATENCY"
+    )
+    parser.add_argument(
+        "--model-suffix", type=str, default="",
+        help="Model directory suffix (e.g. '-gptq' to use Llama-3.1-8B-Instruct-INT4-gptq)"
+    )
+    parser.add_argument(
+        "--backend", type=str, default="optimum",
+        choices=["optimum", "genai"],
+        help="Inference backend: 'optimum' (default, optimum-intel) or 'genai' (openvino-genai LLMPipeline)"
+    )
     args = parser.parse_args()
+
+    # Parse ov_config string into dict
+    ov_config = None
+    if args.ov_config:
+        ov_config = {}
+        for pair in args.ov_config.split(","):
+            key, value = pair.strip().split("=", 1)
+            ov_config[key.strip()] = value.strip()
 
     # Load config
     config = load_config(args.config)
@@ -308,6 +330,11 @@ def main():
     print(f"  Temperatures: {temperatures}")
     print(f"  Scenarios: {[s.name for s in scenarios]}")
     print(f"  Device: {args.device}")
+    print(f"  Backend: {args.backend}")
+    if args.model_suffix:
+        print(f"  Model suffix: {args.model_suffix}")
+    if ov_config:
+        print(f"  ov_config: {ov_config}")
     print(f"  Per scenario: {warmup_runs} warmup + {measured_runs} measured")
     print(f"  Total combinations: {total_combos}")
     print(f"  Total inference runs: {total_runs}")
@@ -330,22 +357,41 @@ def main():
             usb_folder=model_cfg.get("usb_model_dir", "intel-ai-models"),
             local_dir=model_cfg.get("local_model_dir", "~/models/intel-bench"),
             auto_download=not args.no_download,
+            suffix=args.model_suffix,
         )
         print(f"  Model source: {model_info.source}")
         print(f"  Model path: {model_info.path}")
 
-        # Load model
-        llm = OpenVINOLLM(
-            model_path=str(model_info.path),
-            device=args.device,
-            max_new_tokens=max_tokens,
-        )
+        # Load model with selected backend
+        if args.backend == "genai":
+            from lib.inference import OpenVINOGenAILLM
+            llm = OpenVINOGenAILLM(
+                model_path=str(model_info.path),
+                device=args.device,
+                max_new_tokens=max_tokens,
+                ov_config=ov_config,
+            )
+        else:
+            llm = OpenVINOLLM(
+                model_path=str(model_info.path),
+                device=args.device,
+                max_new_tokens=max_tokens,
+                ov_config=ov_config,
+            )
         llm.load()
 
         for temperature in temperatures:
             for scenario in scenarios:
                 print(f"\n--- {scenario.name} | temp={temperature} | {precision} ---")
                 print(f"  Prompt: {scenario.prompt[:80]}...")
+
+                # Build notes with backend/ov_config info
+                run_notes = args.notes
+                if args.backend != "optimum":
+                    run_notes = f"backend: {args.backend}" + (f"; {run_notes}" if run_notes else "")
+                if ov_config:
+                    config_str = ", ".join(f"{k}={v}" for k, v in ov_config.items())
+                    run_notes = f"ov_config: {config_str}" + (f"; {run_notes}" if run_notes else "")
 
                 run_id = db.create_run(
                     machine_id=machine_id,
@@ -360,7 +406,7 @@ def main():
                     warmup_runs=warmup_runs,
                     measured_runs=measured_runs,
                     model_source=model_info.source,
-                    notes=args.notes,
+                    notes=run_notes,
                     system_config_id=system_config_id,
                     experiment_name=experiment_name,
                 )

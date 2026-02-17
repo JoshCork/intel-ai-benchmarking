@@ -49,6 +49,9 @@ pip install -q \
     toml \
     nncf
 
+# Optional: OpenVINO GenAI (native C++ LLM pipeline)
+pip install -q openvino-genai || echo "  WARNING: openvino-genai install failed (optional — needed for --backend genai)"
+
 # --- Verify OpenVINO ---
 echo "[4/5] Verifying OpenVINO installation..."
 python3 -c "
