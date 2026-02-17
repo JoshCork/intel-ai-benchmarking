@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS benchmark_runs (
     measured_runs INTEGER DEFAULT 10,
     started_at TEXT NOT NULL,
     finished_at TEXT,
-    notes TEXT
+    notes TEXT,
+    experiment_name TEXT
 );
 
 CREATE TABLE IF NOT EXISTS run_metrics (
@@ -134,6 +135,7 @@ CREATE INDEX IF NOT EXISTS idx_system_configs_machine ON system_configs(machine_
 MIGRATIONS = [
     """ALTER TABLE benchmark_runs ADD COLUMN system_config_id INTEGER
        REFERENCES system_configs(id)""",
+    """ALTER TABLE benchmark_runs ADD COLUMN experiment_name TEXT""",
 ]
 
 
@@ -233,6 +235,7 @@ class BenchmarkDB:
         model_source: str = "",
         notes: str = "",
         system_config_id: Optional[int] = None,
+        experiment_name: str = "",
     ) -> int:
         """Create a new benchmark run, return run_id."""
         cursor = self.conn.execute(
@@ -241,8 +244,8 @@ class BenchmarkDB:
              scenario_name, scenario_type, system_prompt,
              temperature, max_new_tokens, target_device,
              warmup_runs, measured_runs, started_at, notes,
-             system_config_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             system_config_id, experiment_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 machine_id, model_name, model_precision, model_source,
                 scenario_name, scenario_type, system_prompt,
@@ -251,6 +254,7 @@ class BenchmarkDB:
                 datetime.now(timezone.utc).isoformat(),
                 notes,
                 system_config_id,
+                experiment_name or None,
             ),
         )
         self.conn.commit()
@@ -398,6 +402,7 @@ class BenchmarkDB:
             """SELECT m.hostname, m.cpu_codename, m.gpu_model,
                       br.model_name, br.model_precision, br.temperature,
                       br.target_device, br.scenario_name,
+                      br.experiment_name,
                       ra.tps_mean, ra.tps_median, ra.tps_p95,
                       ra.ttft_mean, ra.ttft_median,
                       ra.total_mean, ra.total_measured_runs

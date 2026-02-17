@@ -84,7 +84,7 @@ def format_comparison_table(rows: list[dict]) -> str:
         return "No benchmark data found."
 
     headers = [
-        "Machine", "Codename", "GPU", "Model", "Precision",
+        "Machine", "Codename", "GPU", "Experiment", "Model", "Precision",
         "Temp", "Device", "Scenario",
         "TPS Mean", "TPS Med", "TPS P95",
         "TTFT Mean", "Total Mean", "Runs",
@@ -95,6 +95,7 @@ def format_comparison_table(rows: list[dict]) -> str:
             r.get("hostname", ""),
             r.get("cpu_codename", ""),
             (r.get("gpu_model", "") or "")[:30],
+            (r.get("experiment_name", "") or "")[:25],
             (r.get("model_name", "").split("/")[-1])[:25],
             r.get("model_precision", ""),
             str(r.get("temperature", "")),

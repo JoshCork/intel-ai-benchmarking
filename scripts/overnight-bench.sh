@@ -3,13 +3,15 @@
 # Deploy to each machine and run via nohup.
 #
 # Usage:
-#   nohup bash scripts/overnight-bench.sh <CODENAME> <TDP> 2>&1 &
+#   nohup bash scripts/overnight-bench.sh <CODENAME> <TDP> [EXPERIMENT_NAME] 2>&1 &
 #   Example: nohup bash scripts/overnight-bench.sh LNL 17W 2>&1 &
+#   Example: nohup bash scripts/overnight-bench.sh LNL 17W "2x8GB DDR5-7200" 2>&1 &
 
 set -euo pipefail
 
-CODENAME="${1:?Usage: overnight-bench.sh <CODENAME> <TDP>}"
-TDP="${2:?Usage: overnight-bench.sh <CODENAME> <TDP>}"
+CODENAME="${1:?Usage: overnight-bench.sh <CODENAME> <TDP> [EXPERIMENT_NAME]}"
+TDP="${2:?Usage: overnight-bench.sh <CODENAME> <TDP> [EXPERIMENT_NAME]}"
+EXPERIMENT_NAME="${3:-}"
 VENV_DIR="$HOME/intel-bench-venv"
 REPO_DIR="$HOME/intel-bench/repo"
 MODEL_DIR="$HOME/models/intel-bench"
@@ -50,6 +52,7 @@ fi
 echo "$(date): Starting overnight benchmark"
 echo "  Codename: $CODENAME"
 echo "  TDP: $TDP"
+echo "  Experiment: ${EXPERIMENT_NAME:-<auto>}"
 echo "  Devices: $DEVICES"
 echo "  Precisions:$PRECISIONS"
 echo "  DB: $DB_PATH"
@@ -57,6 +60,7 @@ echo ""
 
 TOTAL_RUNS=0
 FAILED_RUNS=0
+FIRST_COMBO=true
 
 for device in $DEVICES; do
     for prec in $PRECISIONS; do
@@ -66,15 +70,29 @@ for device in $DEVICES; do
         echo "  Log: $logfile"
         echo "============================================================"
 
-        if python3 benchmark.py \
-            --precision "$prec" \
-            --device "$device" \
-            --codename "$CODENAME" \
-            --tdp "$TDP" \
-            --temperature 0.0 0.7 \
-            --db "$DB_PATH" \
-            --notes "Overnight run: $CODENAME $device $prec" \
-            > "$logfile" 2>&1; then
+        # Build args array
+        bench_args=(
+            --precision "$prec"
+            --device "$device"
+            --codename "$CODENAME"
+            --tdp "$TDP"
+            --temperature 0.0 0.7
+            --db "$DB_PATH"
+            --notes "Overnight run: $CODENAME $device $prec"
+        )
+
+        # Always run PerfSpect on first combo; subsequent runs use cached config (24h window)
+        if [ "$FIRST_COMBO" = true ]; then
+            bench_args+=(--perfspect)
+            FIRST_COMBO=false
+        fi
+
+        # Pass experiment name if provided
+        if [ -n "$EXPERIMENT_NAME" ]; then
+            bench_args+=(--experiment "$EXPERIMENT_NAME")
+        fi
+
+        if python3 benchmark.py "${bench_args[@]}" > "$logfile" 2>&1; then
             echo "$(date): DONE  — $CODENAME $device $prec (success)"
             TOTAL_RUNS=$((TOTAL_RUNS + 1))
         else

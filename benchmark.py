@@ -39,6 +39,7 @@ import argparse
 import json
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import toml
@@ -173,6 +174,10 @@ def main():
     parser.add_argument("--results", action="store_true", help="Show results table and exit")
     parser.add_argument("--notes", default="", help="Notes for this benchmark run")
     parser.add_argument(
+        "--experiment", type=str, default=None,
+        help="Experiment name to group runs (default: auto-generated from codename + timestamp)"
+    )
+    parser.add_argument(
         "--perfspect", action="store_true",
         help="Capture PerfSpect system config before benchmarking"
     )
@@ -203,6 +208,15 @@ def main():
     if not system_prompt:
         print("  WARNING: No system prompt configured — model will use default behavior")
         print("           (Set [system_prompt] text in config.toml)")
+
+    # Experiment name — auto-generate if not provided
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    if args.experiment:
+        experiment_name = args.experiment
+    elif args.codename:
+        experiment_name = f"{args.codename}-{timestamp}"
+    else:
+        experiment_name = f"run-{timestamp}"
 
     # Database — CLI override uses direct path, otherwise try primary with fallback
     if args.db:
@@ -288,6 +302,7 @@ def main():
     total_combos = len(precisions) * len(temperatures) * len(scenarios)
     total_runs = total_combos * (warmup_runs + measured_runs)
     print("=== Benchmark Plan ===")
+    print(f"  Experiment: {experiment_name}")
     print(f"  Model: {model_name}")
     print(f"  Precisions: {precisions}")
     print(f"  Temperatures: {temperatures}")
@@ -347,6 +362,7 @@ def main():
                     model_source=model_info.source,
                     notes=args.notes,
                     system_config_id=system_config_id,
+                    experiment_name=experiment_name,
                 )
 
                 metrics = run_benchmark(
