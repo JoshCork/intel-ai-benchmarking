@@ -1,6 +1,6 @@
-# GPU Runtime Optimization for Intel Xe3 iGPU LLM Inference
+# GPU Runtime Optimization for Intel Client GPU LLM Inference
 
-**Optimizing LLM Inference on Panther Lake Xe3-LPG with OpenVINO**
+**Optimizing LLM Inference on Panther Lake Xe3-LPG iGPU and Arc A770M dGPU with OpenVINO**
 
 *February 2026*
 
@@ -10,7 +10,7 @@
 
 Building on our baseline benchmarking results (see `whitepaper.md`), this paper investigates runtime optimization strategies for improving LLM inference throughput on the Intel Xe3-LPG integrated GPU (Panther Lake H, 25W, DDR5-5600). We test three optimizations independently on Llama 3.1 8B Instruct, then benchmark Qwen2.5-7B-Instruct as an alternative model to evaluate the impact of architecture and model size on bandwidth-constrained hardware.
 
-**Key findings**: (1) OpenVINO runtime configuration flags (`ov_config`) provide **no benefit** and can degrade INT4 performance by up to 7.4%. (2) The OpenVINO GenAI C++ `LLMPipeline` delivers **+4-12% throughput** over the Python-based optimum-intel wrapper. (3) **Qwen2.5-7B-Instruct is 8-28% faster than Llama 3.1-8B** across all precisions, reaching **18.7 TPS at INT4 with 65ms TTFT** — driven by fewer parameters (7B vs 8B) and Grouped Query Attention (GQA). (4) FP16 remains memory-bandwidth-bound regardless of model or optimization.
+**Key findings**: (1) OpenVINO runtime configuration flags (`ov_config`) provide **no benefit** and can degrade INT4 performance by up to 7.4%. (2) The OpenVINO GenAI C++ `LLMPipeline` delivers **+4-16% throughput** over the Python-based optimum-intel wrapper, with larger gains on faster hardware (+16% on Arc A770M dGPU vs +9% on PTL iGPU at INT4). (3) **GPTQ quantization delivers +21% on iGPU and +47% on dGPU** over default AWQ at INT4. (4) **Qwen2.5-7B-Instruct is 8-28% faster than Llama 3.1-8B** across all precisions, reaching **52.2 TPS / 42ms TTFT on the Arc A770M** and **18.7 TPS / 65ms TTFT on PTL iGPU** — driven by fewer parameters (7B vs 8B) and Grouped Query Attention (GQA). (5) FP16 remains memory-bandwidth-bound regardless of model or optimization. (6) **Optimization gains scale with hardware speed** — the dGPU amplifies all software optimizations because Python overhead and suboptimal weight layouts represent a larger fraction of the per-token budget at higher throughput.
 
 ---
 
@@ -279,9 +279,9 @@ All TTFT values are well under the 500ms threshold for perceived "instant" respo
 
 ## 6. Cross-Experiment Comparison
 
-### 6.1 Summary Table (INT4, temp=0.0 — primary kiosk configuration)
+### 6.1 Summary Table — PTL iGPU (INT4, temp=0.0 — primary kiosk configuration)
 
-#### Llama 3.1-8B-Instruct Optimizations
+#### Llama 3.1-8B-Instruct Optimizations (PTL iGPU, DDR5-5600)
 
 | Optimization | INT4 TPS | Δ vs. Baseline | TTFT (ms) | Complexity | Recommendation |
 |-------------|----------|----------------|-----------|------------|----------------|
@@ -290,22 +290,47 @@ All TTFT values are well under the 500ms threshold for perceived "instant" respo
 | Exp 1.5: KV_CACHE_PRECISION=u8 only | 12.5 | **-7.4%** | N/A* | Low | **Do not use** |
 | Exp 2: GPTQ INT4 (optimum) | **16.3** | **+20.7%** | N/A* | Medium | **Use this model** |
 | Exp 3: GenAI C++ pipeline | **14.7** | **+8.9%** | **90** | Medium | **Use this backend** |
-| **Exp 2+3: GPTQ + GenAI** | **17.6** | **+30.4%** | **77** | Medium | **Best Llama config** |
+| **Exp 2+3: GPTQ + GenAI** | **17.6** | **+30.4%** | **77** | Medium | **Best Llama (iGPU)** |
 
-#### Model Comparison (GenAI backend — best configuration)
+#### Model Comparison — PTL iGPU (GenAI backend — best configuration)
 
 | Model + Backend | INT4 TPS | Δ vs. Llama Baseline | TTFT (ms) | Recommendation |
 |----------------|----------|---------------------|-----------|----------------|
 | Llama 3.1-8B AWQ + optimum | 13.5 | — | N/A* | Baseline |
 | Llama 3.1-8B AWQ + GenAI | 14.7 | +8.9% | 90 | Good |
 | Llama 3.1-8B GPTQ + optimum | 16.3 | +20.7% | N/A* | Good |
-| Llama 3.1-8B GPTQ + GenAI | **17.6** | **+30.4%** | **77** | **Best Llama** |
+| Llama 3.1-8B GPTQ + GenAI | **17.6** | **+30.4%** | **77** | **Best Llama (iGPU)** |
 | Qwen 2.5-7B AWQ + optimum | 17.2 | +27.4% | N/A* | Good |
-| **Qwen 2.5-7B AWQ + GenAI** | **18.7** | **+38.5%** | **65** | **Best overall** |
+| **Qwen 2.5-7B AWQ + GenAI** | **18.7** | **+38.5%** | **65** | **Best iGPU** |
+
+### 6.2 Summary Table — Arc A770M dGPU (SKELETOR-03)
+
+The same optimization strategies were validated on the Arc A770M discrete GPU (16GB GDDR6, ~512 GB/s bandwidth) to measure how optimization gains scale with hardware speed.
+
+#### Model Comparison — Arc A770M dGPU (INT4, temp=0.0)
+
+| Model + Backend | INT4 TPS | Δ vs. Llama Baseline | TTFT (ms) | Recommendation |
+|----------------|----------|---------------------|-----------|----------------|
+| Llama 3.1-8B AWQ + optimum | 31.1 | — | N/A* | Baseline |
+| Llama 3.1-8B AWQ + GenAI | 36.0 | +15.8% | 55 | Good |
+| Llama 3.1-8B GPTQ + optimum | 45.8 | +47.3% | N/A* | Good |
+| **Llama 3.1-8B GPTQ + GenAI** | **50.3** | **+61.7%** | **54** | **Best Llama (dGPU)** |
+| Qwen 2.5-7B AWQ + optimum | 46.4 | +49.2% | N/A* | Good |
+| **Qwen 2.5-7B AWQ + GenAI** | **52.2** | **+67.8%** | **42** | **Best overall** |
+
+#### Full Precision Comparison — Arc A770M dGPU (GenAI vs Baseline, temp=0.0)
+
+| Precision | Baseline TPS (optimum) | GenAI TPS | Δ | GenAI TTFT (ms) |
+|-----------|----------------------|-----------|---|-----------------|
+| FP16 | 15.7 | 17.3 | +10.2% | 84 |
+| INT8 | 26.2 | 29.5 | +12.6% | 59 |
+| INT4 | 31.1 | 36.0 | +15.8% | 55 |
+
+**Key insight — optimization gains amplify on faster hardware**: The GenAI C++ pipeline delivers +16% on the dGPU vs +9% on the iGPU at INT4. GPTQ delivers +47% on the dGPU vs +21% on the iGPU. This scaling occurs because Python overhead and suboptimal weight layouts represent a larger fraction of the per-token budget when tokens are generated faster. The dGPU's ~32ms/token decode (INT4 baseline) has proportionally more room for overhead reduction than the iGPU's ~74ms/token.
 
 *\* optimum-intel streamer does not reliably capture TTFT*
 
-### 6.2 Full Precision Comparison (GenAI vs Baseline, temp=0.0)
+### 6.3 Full Precision Comparison — PTL iGPU (GenAI vs Baseline, temp=0.0)
 
 | Precision | Baseline TPS | GenAI TPS | Δ | GenAI TTFT (ms) |
 |-----------|-------------|-----------|---|-----------------|
@@ -313,11 +338,9 @@ All TTFT values are well under the 500ms threshold for perceived "instant" respo
 | INT8 | 9.7 | 10.1 | +4.1% | 119 |
 | INT4 | 13.5 | 14.7 | +8.9% | 90 |
 
-### 6.3 Additive Potential
+### 6.4 Additive Potential
 
-Given Experiment 1's results, combining GenAI + ov_config flags is **not recommended**. The ov_config flags showed negative impact even with the optimum-intel backend, and are unlikely to help with the GenAI pipeline which has its own internal optimization strategy.
-
-A promising combination is **GenAI + GPTQ INT4** (Experiment 2's model with Experiment 3's pipeline). If the GPTQ quantization produces a model that decodes faster, the GenAI pipeline could amplify that benefit. This will be tested if Experiment 2 shows positive results.
+The GPTQ and GenAI optimizations are **fully additive** on both platforms. GPTQ improves the model weights (~20-47%), GenAI improves the runtime (~9-16%), and the gains stack multiplicatively. Combining GenAI + ov_config flags is **not recommended** — the ov_config flags showed negative impact even with the optimum-intel backend.
 
 ---
 
@@ -325,24 +348,28 @@ A promising combination is **GenAI + GPTQ INT4** (Experiment 2's model with Expe
 
 ### 7.1 The Memory Bandwidth Wall
 
-The most striking finding is the **FP16 performance ceiling at ~5.1 TPS** regardless of optimization strategy. This is a hard memory bandwidth limit: the 15GB FP16 model must read every weight from DDR5-5600 DRAM for each token, and the Xe3-LPG iGPU shares that DRAM bandwidth with the CPU. No software optimization can overcome this fundamental hardware constraint.
+The most striking finding is the **FP16 performance ceiling at ~5.1 TPS on the iGPU** regardless of optimization strategy. This is a hard memory bandwidth limit: the 15GB FP16 model must read every weight from DDR5-5600 DRAM for each token, and the Xe3-LPG iGPU shares that DRAM bandwidth with the CPU. No software optimization can overcome this fundamental hardware constraint.
 
 The only path to faster FP16 is faster memory. Our baseline whitepaper showed DDR5-7200 achieving 6.0 TPS (+18%), confirming that FP16 performance scales linearly with memory bandwidth.
 
+**The dGPU confirms this analysis from the opposite direction.** The Arc A770M with dedicated GDDR6 (~512 GB/s) achieves **17.3 TPS at FP16** — 3.4× the iGPU's 5.1 TPS. With ~10× the memory bandwidth, the dGPU delivers ~3.4× the FP16 throughput, indicating that FP16 decode is ~34% bandwidth-efficient on GDDR6. The GenAI pipeline still helps on dGPU FP16 (+10.2% vs 0% on iGPU), suggesting that Python overhead is measurable even at FP16 speeds when the memory subsystem is fast enough.
+
 ### 7.2 Why C++ Wins but Config Flags Don't
 
-The GenAI C++ pipeline's improvement is most pronounced at INT4 (+8.9%) and decreases at FP16 (0%). This pattern is explained by the fraction of time spent in Python overhead vs. actual compute:
+The GenAI C++ pipeline's improvement is most pronounced at INT4 (+8.9% iGPU, +15.8% dGPU) and decreases at FP16 (0% iGPU, +10.2% dGPU). This pattern is explained by the fraction of time spent in Python overhead vs. actual compute:
 
-- At FP16 (5.1 TPS, ~196ms/token), Python overhead is negligible (<1% of token time)
-- At INT4 (13.5 TPS, ~74ms/token), Python overhead becomes significant (~7-12% of token time)
+- **iGPU**: At FP16 (5.1 TPS, ~196ms/token), Python overhead is negligible (<1% of token time). At INT4 (13.5 TPS, ~74ms/token), Python overhead becomes significant (~7-12% of token time).
+- **dGPU**: At FP16 (15.7 TPS, ~64ms/token), Python overhead is already measurable (~10%). At INT4 (31.1 TPS, ~32ms/token), it becomes dominant (~16% of token time).
 
-The `ov_config` runtime flags, by contrast, add computational overhead (quantization/dequantization of KV cache, group-level dynamic quantization math) that is supposed to be offset by reduced memory traffic. On Xe3-LPG, the iGPU's memory subsystem is already efficient enough that the overhead exceeds the savings.
+This explains why **GenAI gains scale with hardware speed** — as the GPU gets faster, the fixed Python per-token cost becomes a larger fraction of total time, and the C++ pipeline's elimination of that overhead yields proportionally larger gains.
+
+The `ov_config` runtime flags, by contrast, add computational overhead (quantization/dequantization of KV cache, group-level dynamic quantization math) that is supposed to be offset by reduced memory traffic. On Xe3-LPG, the iGPU's memory subsystem is already efficient enough that the overhead exceeds the savings. These flags were not tested on the dGPU, but the iGPU results were sufficiently negative to rule them out.
 
 ### 7.3 Qwen2.5-7B vs Llama 3.1-8B: Model Architecture Impact
 
-After establishing the GenAI C++ pipeline as the optimal backend, we benchmarked Qwen2.5-7B-Instruct alongside Llama 3.1-8B-Instruct to evaluate whether a different model architecture could further improve throughput on bandwidth-constrained Xe3-LPG hardware.
+After establishing the GenAI C++ pipeline as the optimal backend, we benchmarked Qwen2.5-7B-Instruct alongside Llama 3.1-8B-Instruct to evaluate whether a different model architecture could further improve throughput on bandwidth-constrained hardware.
 
-#### 7.3.1 GenAI Backend Comparison (Best Configuration)
+#### 7.3.1 GenAI Backend Comparison — PTL iGPU (Best Configuration)
 
 | Precision | Llama 3.1-8B TPS | Qwen 2.5-7B TPS | Qwen Advantage | Llama TTFT | Qwen TTFT |
 |-----------|-----------------|-----------------|----------------|------------|-----------|
@@ -353,7 +380,15 @@ After establishing the GenAI C++ pipeline as the optimal backend, we benchmarked
 | FP16/0.0 | 5.1 | **5.5** | **+7.8%** | 215ms | **193ms** |
 | FP16/0.7 | 5.1 | **5.5** | **+7.8%** | 215ms | **194ms** |
 
-#### 7.3.2 Optimum-Intel Backend Comparison (Baseline)
+#### 7.3.2 GenAI Backend Comparison — Arc A770M dGPU
+
+| Precision | Llama 3.1-8B TPS | Qwen 2.5-7B TPS | Qwen Advantage | Llama TTFT | Qwen TTFT |
+|-----------|-----------------|-----------------|----------------|------------|-----------|
+| INT4/0.0 | 36.0 | **52.2** | **+45.0%** | 55ms | **42ms** |
+| INT8/0.0 | 29.5 | **30.3** | **+2.7%** | 59ms | **55ms** |
+| FP16/0.0 | 17.3 | **19.0** | **+9.8%** | 84ms | **76ms** |
+
+#### 7.3.3 Optimum-Intel Backend Comparison — PTL iGPU (Baseline)
 
 | Precision | Llama 3.1-8B TPS | Qwen 2.5-7B TPS | Qwen Advantage |
 |-----------|-----------------|-----------------|----------------|
@@ -364,52 +399,69 @@ After establishing the GenAI C++ pipeline as the optimal backend, we benchmarked
 | FP16/0.0 | 5.1 | **5.4** | **+5.9%** |
 | FP16/0.7 | 5.0 | **5.3** | **+6.0%** |
 
-#### 7.3.3 Why Qwen Is Faster
+#### 7.3.4 Why Qwen Is Faster
 
 The performance gap is explained by three architectural differences:
 
-1. **Fewer parameters**: Qwen2.5-7B has ~6.5B non-embedding parameters vs Llama's 8.0B — **19% fewer weights** to read from DRAM per token. On a bandwidth-bound iGPU, this translates almost linearly to throughput gains.
+1. **Fewer parameters**: Qwen2.5-7B has ~6.5B non-embedding parameters vs Llama's 8.0B — **19% fewer weights** to read from memory per token. On bandwidth-bound hardware, this translates almost linearly to throughput gains.
 
-2. **Grouped Query Attention (GQA)**: Qwen2.5-7B uses 28 query heads with only 4 KV heads (7:1 ratio), dramatically reducing KV cache size compared to Llama's layout. Smaller KV cache means less DRAM traffic during decode.
+2. **Grouped Query Attention (GQA)**: Qwen2.5-7B uses 28 query heads with only 4 KV heads (7:1 ratio), dramatically reducing KV cache size compared to Llama's layout. Smaller KV cache means less memory traffic during decode.
 
-3. **Amplification at INT4**: The ~27% gap at INT4 (vs ~8% at FP16/INT8) occurs because INT4 removes the weight-bandwidth bottleneck enough that KV cache and Python overhead become relatively larger. Qwen's GQA reduces the KV cache component, and the GenAI pipeline reduces the Python component — both effects compound at INT4.
+3. **Amplification at INT4**: The Qwen advantage at INT4 is dramatic — **+27% on iGPU and +45% on dGPU** — compared to ~8-10% at FP16/INT8. This occurs because INT4 removes the weight-bandwidth bottleneck enough that KV cache and per-token overhead become relatively larger. Qwen's GQA reduces the KV cache component, and this benefit compounds at higher decode speeds. On the dGPU, where INT4 baseline already runs at 31 TPS, Qwen's architectural advantages amplify to nearly 50% faster throughput.
 
-#### 7.3.4 GenAI Uplift per Model
+#### 7.3.5 GenAI Uplift per Model
 
-| Model | Precision | Optimum TPS | GenAI TPS | GenAI Uplift |
-|-------|-----------|------------|-----------|-------------|
-| Llama 3.1-8B | INT4/0.0 | 13.5 | 14.7 | +8.9% |
-| Qwen 2.5-7B | INT4/0.0 | 17.2 | 18.7 | +8.7% |
-| Llama 3.1-8B | INT8/0.0 | 9.7 | 10.1 | +4.1% |
-| Qwen 2.5-7B | INT8/0.0 | 10.4 | 10.9 | +4.8% |
+| Platform | Model | Precision | Optimum TPS | GenAI TPS | GenAI Uplift |
+|----------|-------|-----------|------------|-----------|-------------|
+| iGPU | Llama 3.1-8B | INT4/0.0 | 13.5 | 14.7 | +8.9% |
+| iGPU | Qwen 2.5-7B | INT4/0.0 | 17.2 | 18.7 | +8.7% |
+| dGPU | Llama 3.1-8B | INT4/0.0 | 31.1 | 36.0 | +15.8% |
+| dGPU | Qwen 2.5-7B | INT4/0.0 | 46.4 | 52.2 | +12.5% |
 
-The GenAI C++ pipeline provides similar percentage uplift for both models (~8-9% at INT4, ~4-5% at INT8), confirming that the Python overhead reduction is model-agnostic.
+The GenAI C++ pipeline provides consistent uplift for both models on both platforms, confirming that the Python overhead reduction is model-agnostic. The dGPU sees larger absolute gains (+12-16%) than the iGPU (+8-9%) because the faster decode rate makes Python overhead a proportionally larger bottleneck.
 
 ### 7.4 Practical Impact for Kiosk Deployment
 
-The best configuration — **Qwen2.5-7B-Instruct INT4 with GenAI pipeline** — delivers **18.7 TPS with 65ms TTFT**:
+#### iGPU (Panther Lake Xe3-LPG)
+
+The best iGPU configuration — **Qwen2.5-7B-Instruct INT4 with GenAI pipeline** — delivers **18.7 TPS with 65ms TTFT**:
 
 - A 50-token response takes **2.7 seconds** (vs. 3.7 seconds with Llama optimum baseline)
 - First token appears in **65ms** (perceived as instant)
 - Combined software optimizations (model choice + GenAI pipeline) yield a **39% throughput improvement** over the Llama optimum baseline — equivalent to upgrading from DDR5-5600 to DDR5-8000+ in hardware terms
 
-Even with the Llama model, the GenAI pipeline at **14.7 TPS / 90ms TTFT** provides a meaningful improvement over baseline.
+#### dGPU (Arc A770M)
+
+The best dGPU configuration — **Qwen2.5-7B-Instruct INT4 with GenAI pipeline** — delivers **52.2 TPS with 42ms TTFT**:
+
+- A 50-token response takes **under 1 second** (vs. 1.6 seconds with Llama optimum baseline)
+- First token appears in **42ms** — imperceptible latency
+- Combined software optimizations yield a **+68% throughput improvement** over Llama optimum baseline
+- Even the baseline dGPU (Llama optimum, 31.1 TPS) is **2.3× faster** than the fully optimized iGPU (Qwen GenAI, 18.7 TPS), demonstrating that dedicated GDDR6 bandwidth is transformative for LLM decode
+
+#### GPTQ on dGPU
+
+The GPTQ optimization is particularly impactful on the dGPU: **Llama GPTQ + GenAI reaches 50.3 TPS** (+62% over Llama AWQ optimum baseline), nearly matching Qwen AWQ + GenAI (52.2 TPS). This means GPTQ can compensate for Llama's larger model size on fast hardware, giving deployment flexibility when Llama is preferred for quality or licensing reasons.
 
 ---
 
 ## 8. Conclusions
 
-1. **Use Qwen2.5-7B-Instruct over Llama 3.1-8B-Instruct** when throughput matters. The smaller model with GQA delivers 27% higher INT4 throughput (18.7 vs 14.7 TPS) on bandwidth-constrained Xe3-LPG hardware.
+1. **Use Qwen2.5-7B-Instruct over Llama 3.1-8B-Instruct** when throughput matters. The smaller model with GQA delivers +27% higher INT4 throughput on iGPU (18.7 vs 14.7 TPS) and +45% on dGPU (52.2 vs 36.0 TPS). The Qwen advantage amplifies on faster hardware.
 
-2. **Use the OpenVINO GenAI C++ pipeline** (`openvino-genai` LLMPipeline) instead of optimum-intel for production deployment. It provides +4-12% throughput improvement with no quality tradeoff, for both Llama and Qwen models.
+2. **Use the OpenVINO GenAI C++ pipeline** (`openvino-genai` LLMPipeline) instead of optimum-intel for production deployment. It provides +9-16% INT4 throughput improvement with no quality tradeoff, for both Llama and Qwen models on both iGPU and dGPU.
 
 3. **Do not use `ov_config` runtime flags** (KV cache quantization, dynamic quantization, performance hints) on Xe3-LPG. They provide zero benefit and can degrade INT4 performance by up to 7%.
 
-4. **Use GPTQ with scale estimation** instead of default AWQ quantization for INT4 models. GPTQ delivers ~20% higher throughput at INT4 with a one-time ~8-hour CPU export cost. The GPTQ and GenAI optimizations are fully additive.
+4. **Use GPTQ with scale estimation** instead of default AWQ quantization for INT4 models. GPTQ delivers +21% on iGPU and +47% on dGPU over AWQ with a one-time ~8-hour CPU export cost. The GPTQ and GenAI optimizations are fully additive (+30% combined on iGPU, +62% on dGPU).
 
-5. **Optimal kiosk configuration**: Qwen2.5-7B-Instruct INT4 (AWQ) with GenAI pipeline — **18.7 TPS, 65ms TTFT**. If Llama is required, Llama 3.1-8B GPTQ INT4 with GenAI — **17.6 TPS, 77ms TTFT**. A GPTQ export of Qwen2.5-7B may yield even higher numbers (not yet tested).
+5. **Optimization gains scale with hardware speed.** Every software optimization we tested delivers larger percentage gains on the faster dGPU than on the iGPU. This occurs because Python overhead and suboptimal weight layouts represent a larger fraction of the per-token budget at higher throughput. Implication: as Intel ships faster GPUs, software optimization becomes *more* important, not less.
 
-6. **FP16 is memory-bandwidth-bound** at 5.1-5.5 TPS regardless of model or optimization. The only path to faster FP16 is faster DRAM (DDR5-7200+).
+6. **Optimal configurations**:
+   - **iGPU**: Qwen2.5-7B INT4 AWQ + GenAI — **18.7 TPS, 65ms TTFT**. If Llama required: GPTQ + GenAI — **17.6 TPS, 77ms TTFT**.
+   - **dGPU**: Qwen2.5-7B INT4 AWQ + GenAI — **52.2 TPS, 42ms TTFT**. If Llama required: GPTQ + GenAI — **50.3 TPS, 54ms TTFT**. A GPTQ export of Qwen may yield even higher numbers (not yet tested).
+
+7. **FP16 is memory-bandwidth-bound** at 5.1-5.5 TPS on iGPU and 17-19 TPS on dGPU, regardless of model or optimization. The only path to faster FP16 is faster memory (DDR5-7200+ or wider GDDR6 bus).
 
 ---
 

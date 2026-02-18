@@ -10,11 +10,11 @@
 
 This paper presents a standardized benchmarking methodology for evaluating large language model (LLM) inference performance on Intel client-class hardware using the OpenVINO runtime. We benchmark **Meta's Llama 3.1 8B Instruct** and **Alibaba's Qwen2.5-7B-Instruct** across three weight precision formats (FP16, INT8, INT4) on Intel discrete and integrated GPUs, using realistic retail kiosk conversation scenarios as test workloads. We further evaluate runtime optimization strategies — GPTQ quantization, the OpenVINO GenAI C++ pipeline, and `ov_config` runtime flags — and conduct a semantic quality comparison across models and precisions.
 
-Our results demonstrate that INT4 quantization on an Intel Arc A770M discrete GPU achieves **31-33 tokens/sec** with greedy decoding — exceeding the 10 TPS interactive threshold by 3x — while maintaining conversational quality indistinguishable from FP16 inference. The full precision sweep across platforms reveals that **quantization yields proportionally larger gains on bandwidth-constrained iGPUs** (2.33x INT4/FP16 speedup on Lunar Lake vs 2.03x on Arc A770M).
+Our results demonstrate that INT4 quantization on an Intel Arc A770M discrete GPU achieves **31-33 tokens/sec** with the baseline optimum-intel backend and up to **52.2 tokens/sec** with Qwen2.5-7B + GenAI pipeline — exceeding the 10 TPS interactive threshold by 5x — while maintaining conversational quality indistinguishable from FP16 inference. The full precision sweep across platforms reveals that **quantization yields proportionally larger gains on bandwidth-constrained iGPUs** (2.33x INT4/FP16 speedup on Lunar Lake vs 2.03x on Arc A770M).
 
 On integrated GPUs with INT4, **Panther Lake (Xe3-LPG) with DDR5-7200 achieves 16.4 TPS** — the fastest iGPU configuration tested with baseline settings — while **Lunar Lake (Xe2) achieves ~15 TPS** and **Meteor Lake (Xe-LPG) reaches only ~6.7 TPS**. A controlled memory bandwidth experiment on Panther Lake — same silicon with DDR5-7200 vs DDR5-5600 — reveals an **18% throughput drop** from 22% less bandwidth, confirming that iGPU LLM inference is overwhelmingly memory-bandwidth bound. At FP16, Meteor Lake manages only **3.3 TPS** — every query takes 10-26 seconds, rendering it unusable for interactive applications. NPU inference is not currently viable for autoregressive LLM workloads due to dynamic shape constraints in the Intel NPU compiler.
 
-**Optimization findings**: Software optimizations deliver substantial gains beyond baseline hardware performance. The OpenVINO GenAI C++ pipeline provides **+4-12% throughput** over the Python-based optimum-intel wrapper, with the largest gains at INT4. GPTQ quantization with scale estimation achieves **+20.7%** over default AWQ at INT4. Combined, GPTQ + GenAI delivers **+30.4%** — pushing Llama 3.1-8B to **17.6 TPS / 77ms TTFT** on Panther Lake DDR5-5600. Switching to **Qwen2.5-7B-Instruct** adds another dimension: its smaller parameter count (7B vs 8B) and Grouped Query Attention yield **18.7 TPS / 65ms TTFT** at INT4 with the GenAI pipeline — the fastest configuration tested, and a **38.5% improvement** over the Llama optimum baseline. Runtime `ov_config` flags provided no benefit and degraded INT4 performance by up to 7.4%.
+**Optimization findings**: Software optimizations deliver substantial gains beyond baseline hardware performance. The OpenVINO GenAI C++ pipeline provides **+4-16% throughput** over the Python-based optimum-intel wrapper, with larger gains on faster hardware (up to +16% on Arc A770M vs +9% on PTL iGPU at INT4). GPTQ quantization with scale estimation achieves **+47% on dGPU** and **+21% on iGPU** over default AWQ at INT4. Combined, GPTQ + GenAI delivers **+62%** on the Arc A770M — pushing Llama 3.1-8B from 31.1 to **50.3 TPS / 54ms TTFT**. Switching to **Qwen2.5-7B-Instruct** yields the highest throughput: **52.2 TPS / 42ms TTFT** on the Arc A770M and **18.7 TPS / 65ms TTFT** on the Panther Lake iGPU. Runtime `ov_config` flags provided no benefit and degraded INT4 performance by up to 7.4%.
 
 **Quality findings**: INT4 quantization causes no meaningful quality degradation for kiosk conversations. Both models produce excellent, contextually appropriate responses at all precision levels. Qwen wins 3 of 7 scenarios head-to-head, Llama wins 2, with 2 ties. Both models hallucinate product names — RAG is essential for production deployment. The quality difference between models exceeds the quality difference between precisions, making model selection more important than precision choice.
 
@@ -49,7 +49,7 @@ We target a **retail kiosk assistant** — an interactive terminal where custome
 | PTL-FAIRCHILD | Intel Core Ultra (Panther Lake-H) | PTL (Panther Lake) | Intel Arc (Xe3-LPG, integrated) | Integrated | 25W SoC | 16 GB DDR5-7200 / 64 GB DDR5-5600 |
 | SKELETOR-03 | 12th Gen Intel Core i7-12700H | ADL (Alder Lake) | Intel Arc A770M (16GB GDDR6) | Discrete (Xe-HPG) | 45W CPU / 120-150W TGP | 62 GB DDR4 |
 
-All machines run Ubuntu 24.04 LTS with OpenVINO 2025.4.1, Python 3.12, and the Intel GPU compute runtime (NEO). SKELETOR-03 is identical hardware to friday-cork and serves as both the central benchmarking database host and a future benchmark machine (setup complete, benchmarks pending).
+All machines run Ubuntu 24.04 LTS with OpenVINO 2025.4.1, Python 3.12, and the Intel GPU compute runtime (NEO). SKELETOR-03 is identical hardware to friday-cork and serves as the central benchmarking database host. Both dGPU machines produce identical baseline results (within measurement noise), confirming hardware reproducibility.
 
 #### GPU Architecture Comparison
 
@@ -1017,18 +1017,29 @@ We tested OpenVINO runtime configuration flags (`KV_CACHE_PRECISION=u8`, `DYNAMI
 
 Re-exporting the Llama INT4 model using GPTQ with scale estimation (128 calibration samples from WikiText-2) instead of the default AWQ quantization.
 
+#### PTL iGPU (DDR5-5600)
+
 | Backend | AWQ INT4 TPS | GPTQ INT4 TPS | Δ TPS | GPTQ TTFT (ms) |
 |---------|-------------|---------------|-------|----------------|
 | optimum | 13.5 | **16.3** | **+20.7%** | N/A* |
 | GenAI | 14.7 | **17.6** | **+19.7%** | **77** |
 
+#### Arc A770M dGPU (SKELETOR-03)
+
+| Backend | AWQ INT4 TPS | GPTQ INT4 TPS | Δ TPS | GPTQ TTFT (ms) |
+|---------|-------------|---------------|-------|----------------|
+| optimum | 31.1 | **45.8** | **+47.3%** | N/A* |
+| GenAI | 36.0 | **50.3** | **+39.7%** | **54** |
+
 *\* optimum-intel streamer does not reliably capture TTFT*
 
-GPTQ's per-channel scale estimation produces weight layouts that are more efficient for the Xe3-LPG's INT4 compute units. The GPTQ model (4.4 GB) is slightly larger than AWQ (4.2 GB) yet decodes ~20% faster. Export cost: ~8 hours on CPU (one-time).
+GPTQ's per-channel scale estimation produces weight layouts that are more efficient for INT4 compute units. The GPTQ model (4.4 GB) is slightly larger than AWQ (4.2 GB) yet decodes dramatically faster. The **GPTQ gain is even larger on the dGPU (+47%)** than the iGPU (+21%), likely because the Arc A770M's higher bandwidth allows GPTQ's better weight layout to be exploited more fully. Export cost: ~8 hours on CPU (one-time).
 
 ### 9.3 Experiment 3: OpenVINO GenAI C++ Pipeline — Clear Winner
 
 Replacing the Python-based `optimum-intel` wrapper with the C++ `openvino-genai` `LLMPipeline`.
+
+#### PTL iGPU (DDR5-5600) — Llama 3.1-8B
 
 | Precision | Baseline TPS (optimum) | GenAI TPS | Δ TPS | GenAI TTFT (ms) |
 |-----------|----------------------|-----------|-------|-----------------|
@@ -1036,22 +1047,43 @@ Replacing the Python-based `optimum-intel` wrapper with the C++ `openvino-genai`
 | INT8 | 9.7 | 10.1 | **+4.1%** | 119 |
 | INT4 | 13.5 | 14.7 | **+8.9%** | 90 |
 
-The C++ pipeline eliminates Python overhead in the token generation loop. Improvement scales with token speed: INT4 gains the most (+8.9%) because per-token Python overhead is a larger fraction of the ~74ms/token decode time. FP16 sees no improvement because the ~196ms/token decode time is dominated by memory bandwidth, not Python overhead.
+#### Arc A770M dGPU (SKELETOR-03) — Llama 3.1-8B
 
-### 9.4 Combined Optimization Summary (INT4, Greedy, PTL DDR5-5600)
+| Precision | Baseline TPS (optimum) | GenAI TPS | Δ TPS | GenAI TTFT (ms) |
+|-----------|----------------------|-----------|-------|-----------------|
+| FP16 | 15.7 | 17.3 | **+10.2%** | 84 |
+| INT8 | 26.2 | 29.5 | **+12.6%** | 59 |
+| INT4 | 31.1 | 36.0 | **+15.8%** | 55 |
+
+The C++ pipeline eliminates Python overhead in the token generation loop. **The GenAI uplift is significantly larger on the dGPU** (+10-16%) than the iGPU (+0-9%) because the Arc A770M generates tokens fast enough that Python overhead becomes a meaningful fraction of per-token time even at FP16. On the iGPU, FP16 sees no improvement because the ~196ms/token decode time is dominated by memory bandwidth, not Python overhead. On the dGPU, the ~64ms/token FP16 decode time is fast enough for the C++ pipeline to provide a 10% uplift.
+
+### 9.4 Combined Optimization Summary (INT4, Greedy)
+
+#### PTL iGPU (DDR5-5600)
 
 | Configuration | INT4 TPS | Δ vs Baseline | TTFT (ms) | Recommendation |
 |-------------|----------|----------------|-----------|----------------|
 | Llama AWQ + optimum (baseline) | 13.5 | — | N/A* | Baseline |
 | Llama AWQ + GenAI | 14.7 | +8.9% | 90 | Good |
 | Llama GPTQ + optimum | 16.3 | +20.7% | N/A* | Good |
-| **Llama GPTQ + GenAI** | **17.6** | **+30.4%** | **77** | **Best Llama** |
+| **Llama GPTQ + GenAI** | **17.6** | **+30.4%** | **77** | **Best Llama (iGPU)** |
 | Qwen AWQ + optimum | 17.2 | +27.4% | N/A* | Good |
-| **Qwen AWQ + GenAI** | **18.7** | **+38.5%** | **65** | **Best overall** |
+| **Qwen AWQ + GenAI** | **18.7** | **+38.5%** | **65** | **Best overall (iGPU)** |
+
+#### Arc A770M dGPU (SKELETOR-03)
+
+| Configuration | INT4 TPS | Δ vs Baseline | TTFT (ms) | Recommendation |
+|-------------|----------|----------------|-----------|----------------|
+| Llama AWQ + optimum (baseline) | 31.1 | — | N/A* | Baseline |
+| Llama AWQ + GenAI | 36.0 | +15.8% | 55 | Good |
+| Llama GPTQ + optimum | 45.8 | +47.3% | N/A* | Good |
+| **Llama GPTQ + GenAI** | **50.3** | **+61.7%** | **54** | **Best Llama (dGPU)** |
+| Qwen AWQ + optimum | 46.4 | +49.2% | N/A* | Good |
+| **Qwen AWQ + GenAI** | **52.2** | **+67.8%** | **42** | **Best overall** |
 
 *\* optimum-intel streamer does not reliably capture TTFT*
 
-The GPTQ and GenAI optimizations are fully additive: GPTQ improves the model itself (~20%), GenAI improves the runtime (~9%), and the gains stack. Combined software optimizations deliver **+30-39%** — equivalent to upgrading from DDR5-5600 to DDR5-8000+ in hardware terms.
+The GPTQ and GenAI optimizations are fully additive on both platforms. On the iGPU, combined software optimizations deliver **+30-39%**. On the dGPU, the gains are even larger: **+62-68%** — because the higher-bandwidth A770M can better exploit GPTQ's improved weight layout and the faster token rate makes Python overhead elimination more impactful. The dGPU's best configuration (**Qwen INT4 GenAI = 52.2 TPS**) is 2.8x faster than the iGPU's best (**18.7 TPS**).
 
 > See `optimization-whitepaper.md` for full experimental details, reproduction commands, and analysis.
 
@@ -1233,11 +1265,9 @@ On the Arc A770M, the GPU generates tokens fast enough that the sampling overhea
 
 ### 11.5 TTFT Performance
 
-All configurations achieve TTFT < 2ms — orders of magnitude below the 100ms perceptual threshold. This is because:
-1. The OpenVINO model is pre-compiled at load time
-2. GPU memory is pre-allocated during model loading
-3. The first-token computation involves a single forward pass through the model
-4. Input sequences are short (< 100 tokens for most scenarios)
+With the optimum-intel backend, all configurations report TTFT < 2ms — but this is a **measurement artifact** of the Python streamer callback, which does not reliably capture first-token timing.
+
+The GenAI C++ backend provides accurate TTFT measurement. Real TTFT values on the Arc A770M dGPU range from **42ms** (Qwen INT4) to **84ms** (Llama FP16) — all well under the 100ms perceptual threshold for "instant" response. On the PTL iGPU, TTFT ranges from **65ms** (Qwen INT4) to **215ms** (Llama FP16). Even the slowest TTFT (FP16 on iGPU) is below the 500ms threshold for perceived conversational responsiveness.
 
 ### 11.6 Cross-Platform Comparison
 
@@ -1251,7 +1281,9 @@ All configurations achieve TTFT < 2ms — orders of magnitude below the 100ms pe
 | **Lunar Lake** (LNL-GROVE) | **14.9** | **10.2** | **6.4** | 2.33x |
 | **Meteor Lake** (MTL-NOYCE) | **6.7** | **5.2** | **3.3** | 2.03x |
 
-#### By Model + Backend — Panther Lake DDR5-5600, INT4 Greedy (temp=0.0)
+#### By Model + Backend — INT4 Greedy (temp=0.0)
+
+**Panther Lake iGPU (DDR5-5600):**
 
 | Configuration | INT4 TPS | TTFT (ms) | Δ vs Baseline |
 |--------------|----------|-----------|---------------|
@@ -1261,9 +1293,19 @@ All configurations achieve TTFT < 2ms — orders of magnitude below the 100ms pe
 | Qwen 2.5-7B AWQ + optimum | 17.2 | N/A* | +27.4% |
 | **Qwen 2.5-7B AWQ + GenAI** | **18.7** | **65** | **+38.5%** |
 
+**Arc A770M dGPU (SKELETOR-03):**
+
+| Configuration | INT4 TPS | TTFT (ms) | Δ vs Baseline |
+|--------------|----------|-----------|---------------|
+| Llama 3.1-8B AWQ + optimum (baseline) | 31.1 | N/A* | — |
+| Llama 3.1-8B AWQ + GenAI | 36.0 | 55 | +15.8% |
+| Llama 3.1-8B GPTQ + GenAI | **50.3** | **54** | +61.7% |
+| Qwen 2.5-7B AWQ + optimum | 46.4 | N/A* | +49.2% |
+| **Qwen 2.5-7B AWQ + GenAI** | **52.2** | **42** | **+67.8%** |
+
 *\* optimum-intel streamer does not reliably capture TTFT*
 
-#### Architecture Comparison (INT4, Greedy)
+#### Architecture Comparison (INT4 AWQ Optimum Baseline, Greedy)
 
 | Platform | GPU Architecture | XMX | Memory BW | GPU TPS | CPU TPS | GPU/CPU Ratio | TPS/Watt |
 |----------|-----------------|-----|-----------|---------|---------|---------------|----------|
@@ -1334,19 +1376,23 @@ The PTL dual-configuration experiment provides the first controlled test in this
 
 ## 12. Conclusions
 
-1. **Best overall configuration**: Qwen 2.5-7B INT4 AWQ + GenAI pipeline = **18.7 TPS, 65ms TTFT** on Panther Lake DDR5-5600. A 50-token response takes 2.7 seconds with perceived-instant first token.
+1. **Best dGPU configuration**: Qwen 2.5-7B INT4 AWQ + GenAI pipeline on Arc A770M = **52.2 TPS, 42ms TTFT**. A 50-token response completes in under 1 second — 5x the kiosk target.
 
-2. **Best Llama configuration**: Llama 3.1-8B INT4 GPTQ + GenAI pipeline = **17.6 TPS, 77ms TTFT**. GPTQ and GenAI optimizations are fully additive (+30.4% combined).
+2. **Best iGPU configuration**: Qwen 2.5-7B INT4 AWQ + GenAI pipeline on Panther Lake DDR5-5600 = **18.7 TPS, 65ms TTFT**. A 50-token response takes 2.7 seconds with perceived-instant first token.
 
-3. **Model selection matters more than precision for quality**: The difference between Qwen and Llama response styles is larger than the difference between FP16 and INT4 within either model. Choose your model based on brand voice preference; choose INT4 unconditionally for throughput.
+3. **Best Llama configuration**: Llama 3.1-8B INT4 GPTQ + GenAI pipeline = **50.3 TPS / 54ms TTFT** on dGPU, **17.6 TPS / 77ms TTFT** on iGPU. GPTQ and GenAI optimizations are fully additive.
 
-4. **INT4 quantization is safe**: No meaningful quality degradation at any precision level for kiosk conversations. There is no quality-speed tradeoff — INT4 is strictly better (faster, equal quality).
+4. **Model selection matters more than precision for quality**: The difference between Qwen and Llama response styles is larger than the difference between FP16 and INT4 within either model. Choose your model based on brand voice preference; choose INT4 unconditionally for throughput.
 
-5. **Software optimizations deliver hardware-equivalent gains**: Combined software changes (model choice + GPTQ + GenAI) deliver +30-39% over the Llama optimum baseline — equivalent to upgrading from DDR5-5600 to DDR5-8000+ in hardware terms. These are free performance gains with no hardware cost.
+5. **INT4 quantization is safe**: No meaningful quality degradation at any precision level for kiosk conversations. There is no quality-speed tradeoff — INT4 is strictly better (faster, equal quality).
 
-6. **Memory bandwidth remains the dominant variable**: The PTL dual-config experiment confirms 0.82 elasticity — 22% less bandwidth = 18% less throughput. FP16 is memory-bandwidth-bound at ~5.1-5.5 TPS regardless of model or optimization.
+6. **Software optimizations deliver hardware-equivalent gains**: Combined software changes (model choice + GPTQ + GenAI) deliver **+68% on dGPU** and **+39% on iGPU** over the Llama optimum baseline. On the dGPU, this is equivalent to upgrading from a mid-range to a high-end GPU — achieved purely through software. These are free performance gains with no hardware cost.
 
-7. **RAG is essential**: Both models hallucinate product names and policy details. A production kiosk must use retrieval-augmented generation to ground responses in actual inventory/policy data.
+7. **Optimization gains scale with hardware speed**: The GenAI C++ pipeline delivers +16% on the dGPU vs +9% on the iGPU. GPTQ delivers +47% on the dGPU vs +21% on the iGPU. Faster hardware amplifies software optimization benefits because overhead becomes a larger fraction of the per-token budget.
+
+8. **Memory bandwidth remains the dominant variable**: The PTL dual-config experiment confirms 0.82 elasticity — 22% less bandwidth = 18% less throughput. FP16 is memory-bandwidth-bound at ~5.1-5.5 TPS on iGPU regardless of model or optimization, and ~15.7-19.0 TPS on dGPU.
+
+9. **RAG is essential**: Both models hallucinate product names and policy details. A production kiosk must use retrieval-augmented generation to ground responses in actual inventory/policy data.
 
 ---
 
@@ -1389,11 +1435,16 @@ The PTL dual-configuration experiment provides the first controlled test in this
 | GenAI C++ pipeline | Llama 3.1-8B | **Complete** — +8.9% INT4 |
 | Quality comparison | Both models | **Complete** — see Section 10 |
 
-### Pending
+### SKELETOR-03 (Arc A770M dGPU) — New Configurations
 
-| Machine | Status |
-|---------|--------|
-| SKELETOR-03 (Arc A770M) | **Setup complete, benchmarks pending** — identical HW to friday-cork, central DB host |
+| Model | Backend | Precision | Status |
+|-------|---------|-----------|--------|
+| Llama 3.1-8B AWQ | optimum | FP16, INT8, INT4 | **Complete** — matches friday-cork baseline |
+| Llama 3.1-8B AWQ | GenAI | FP16, INT8, INT4 | **Complete** — +10-16% over optimum |
+| Llama 3.1-8B GPTQ | optimum | INT4 | **Complete** — 45.8 TPS (+47% over AWQ) |
+| Llama 3.1-8B GPTQ | GenAI | INT4 | **Complete** — 50.3 TPS (+62% over AWQ baseline) |
+| Qwen 2.5-7B AWQ | optimum | FP16, INT8, INT4 | **Complete** — Qwen faster than Llama at all precisions |
+| Qwen 2.5-7B AWQ | GenAI | FP16, INT8, INT4 | **Complete** — 52.2 TPS INT4 (best overall) |
 
 ---
 
@@ -1482,4 +1533,4 @@ ORDER BY r.scenario_name, m.run_number;
 
 ---
 
-*All GPU benchmark configurations across four platforms (Arc A770M, Lunar Lake, Meteor Lake, and Panther Lake), two models (Llama 3.1-8B, Qwen 2.5-7B), and three precision levels are now complete. Optimization experiments (ov_config, GPTQ, GenAI pipeline) and quality analysis are complete on Panther Lake. Best overall configuration: Qwen 2.5-7B INT4 AWQ + GenAI = 18.7 TPS, 65ms TTFT. Best Llama configuration: Llama 3.1-8B INT4 GPTQ + GenAI = 17.6 TPS, 77ms TTFT. SKELETOR-03 benchmarks pending.*
+*All GPU benchmark configurations across five machines (Arc A770M x2, Lunar Lake, Meteor Lake, and Panther Lake), two models (Llama 3.1-8B, Qwen 2.5-7B), three precision levels, and two backends (optimum-intel, GenAI) are now complete. Optimization experiments (ov_config, GPTQ, GenAI pipeline) and quality analysis are complete on both Panther Lake iGPU and Arc A770M dGPU. Best overall: Qwen 2.5-7B INT4 AWQ + GenAI = 52.2 TPS / 42ms TTFT (dGPU), 18.7 TPS / 65ms TTFT (iGPU).*
