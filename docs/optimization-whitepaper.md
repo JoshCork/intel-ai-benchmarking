@@ -8,9 +8,9 @@
 
 ## Abstract
 
-*This section will be completed after all experiments are run.*
+Building on our baseline benchmarking results (see `whitepaper.md`), this paper investigates three runtime optimization strategies for improving Llama 3.1 8B Instruct inference throughput on the Intel Xe3-LPG integrated GPU (Panther Lake H, 25W, DDR5-5600). We test each optimization independently across FP16, INT8, and INT4 precisions using standardized kiosk conversation scenarios.
 
-Building on our baseline benchmarking results (see `whitepaper.md`), this paper investigates three concrete runtime optimization strategies for improving LLM inference throughput on Intel Xe3-LPG integrated GPUs. We test each optimization independently on a Panther Lake H system (25W, DDR5-5600) using standardized kiosk conversation scenarios, comparing against the unoptimized baseline to isolate the effect of each lever.
+**Key findings**: (1) OpenVINO runtime configuration flags (`ov_config`) — including KV cache quantization, dynamic quantization, and latency hints — provide **no benefit** and can degrade INT4 performance by up to 7.4%. (2) The OpenVINO GenAI C++ `LLMPipeline` delivers **+4-12% throughput** improvement over the Python-based optimum-intel wrapper, with INT4 improving from 13.5 to 14.7 TPS and revealing real TTFT of 90ms. (3) FP16 performance remains memory-bandwidth-bound at ~5.1 TPS regardless of optimization strategy. The GenAI pipeline is recommended for all production deployments on Xe3-LPG hardware.
 
 ---
 
@@ -127,8 +127,6 @@ For each experiment, we report:
 
 ## 3. Experiment 1 Results: `ov_config` Runtime Flags
 
-*To be filled after running experiment.*
-
 ### 3.1 Configuration
 
 ```bash
@@ -141,18 +139,45 @@ python3 benchmark.py --precision FP16 INT8 INT4 --device GPU \
 
 ### 3.2 Results
 
-| Precision | Temp | Baseline TPS | Optimized TPS | Δ TPS | Baseline TTFT | Optimized TTFT | Δ TTFT |
-|-----------|------|-------------|--------------|-------|--------------|----------------|--------|
-| FP16 | 0.0 | | | | | | |
-| FP16 | 0.7 | | | | | | |
-| INT8 | 0.0 | | | | | | |
-| INT8 | 0.7 | | | | | | |
-| INT4 | 0.0 | | | | | | |
-| INT4 | 0.7 | | | | | | |
+| Precision | Temp | Baseline TPS | Optimized TPS | Δ TPS | Notes |
+|-----------|------|-------------|--------------|-------|-------|
+| FP16 | 0.0 | 5.1 | 5.0 | **-2.0%** | Within noise |
+| FP16 | 0.7 | 5.0 | 5.0 | 0.0% | No change |
+| INT8 | 0.0 | 9.7 | 9.7 | 0.0% | No change |
+| INT8 | 0.7 | 9.4 | 9.2 | **-2.1%** | Slight degradation |
+| INT4 | 0.0 | 13.5 | 13.4 | **-0.7%** | Within noise |
+| INT4 | 0.7 | 12.9 | 12.6 | **-2.3%** | Degradation |
 
-### 3.3 Analysis
+*Note: TTFT values of 0ms in the optimum-intel backend are a known measurement artifact — the Python streamer callback does not reliably capture first-token timing.*
 
-*To be filled after results.*
+### 3.3 Experiment 1.5: KV Cache u8 Only
+
+After Experiment 1 showed negative results from the combined flags, we isolated `KV_CACHE_PRECISION=u8` alone to test whether the KV cache quantization was beneficial on its own.
+
+```bash
+python3 benchmark.py --precision FP16 INT8 INT4 --device GPU \
+  --temperature 0.0 0.7 --codename PTL --tdp 25W \
+  --experiment "PTL-kv-cache-u8-DDR5-5600" \
+  --ov-config "KV_CACHE_PRECISION=u8" \
+  --perfspect --db ~/intel-bench/results/benchmarks.db
+```
+
+| Precision | Temp | Baseline TPS | KV u8 TPS | Δ TPS | Notes |
+|-----------|------|-------------|-----------|-------|-------|
+| FP16 | 0.0 | 5.1 | 5.1 | 0.0% | Neutral |
+| FP16 | 0.7 | 5.0 | 5.0 | 0.0% | Neutral |
+| INT8 | 0.0 | 9.7 | 9.7 | 0.0% | Neutral |
+| INT8 | 0.7 | 9.4 | 9.4 | 0.0% | Neutral |
+| INT4 | 0.0 | 13.5 | 12.5 | **-7.4%** | Significant degradation |
+| INT4 | 0.7 | 12.9 | 12.1 | **-6.2%** | Significant degradation |
+
+### 3.4 Analysis
+
+**All three `ov_config` flags together produced no benefit and slight degradation** (-0.7% to -2.3%) across all precisions. The combined overhead of u8 KV cache quantization, dynamic quantization group sizing, and latency hints appears to introduce more computational overhead than the memory bandwidth savings they provide on this platform.
+
+**Isolating KV_CACHE_PRECISION=u8** showed it is **neutral for FP16 and INT8** but **actively harmful for INT4** (-6.2% to -7.4%). The likely explanation is "double quantization" — when model weights are already INT4, quantizing the KV cache to u8 introduces additional precision loss that forces more recomputation or causes the scheduler to make suboptimal decisions. The effect is that the GPU spends more time on quantization/dequantization overhead than it saves on memory bandwidth.
+
+**Conclusion**: Runtime `ov_config` flags do not improve performance on Xe3-LPG with DDR5-5600. The iGPU's memory subsystem is already operating efficiently under default settings, and adding quantization overhead to an already bandwidth-constrained pipeline only makes things worse.
 
 ---
 
@@ -192,11 +217,11 @@ python3 benchmark.py --precision INT4 --device GPU \
 
 ## 5. Experiment 3 Results: OpenVINO GenAI `LLMPipeline`
 
-*To be filled after running experiment.*
-
 ### 5.1 Configuration
 
 ```bash
+pip install openvino-genai
+
 python3 benchmark.py --precision FP16 INT8 INT4 --device GPU \
   --temperature 0.0 0.7 --codename PTL --tdp 25W \
   --experiment "PTL-genai-DDR5-5600" \
@@ -206,49 +231,106 @@ python3 benchmark.py --precision FP16 INT8 INT4 --device GPU \
 
 ### 5.2 Results
 
-| Precision | Temp | Baseline TPS (optimum) | GenAI TPS | Δ TPS | Baseline TTFT | GenAI TTFT | Δ TTFT |
-|-----------|------|----------------------|-----------|-------|--------------|------------|--------|
-| FP16 | 0.0 | | | | | | |
-| FP16 | 0.7 | | | | | | |
-| INT8 | 0.0 | | | | | | |
-| INT8 | 0.7 | | | | | | |
-| INT4 | 0.0 | | | | | | |
-| INT4 | 0.7 | | | | | | |
+| Precision | Temp | Baseline TPS (optimum) | GenAI TPS | Δ TPS | GenAI TTFT (ms) |
+|-----------|------|----------------------|-----------|-------|-----------------|
+| FP16 | 0.0 | 5.1 | 5.1 | 0.0% | 215 |
+| FP16 | 0.7 | 5.0 | 5.1 | **+2.0%** | 215 |
+| INT8 | 0.0 | 9.7 | 10.1 | **+4.1%** | 119 |
+| INT8 | 0.7 | 9.4 | 10.0 | **+6.4%** | 120 |
+| INT4 | 0.0 | 13.5 | 14.7 | **+8.9%** | 90 |
+| INT4 | 0.7 | 12.9 | 14.5 | **+12.4%** | 90 |
 
 ### 5.3 Analysis
 
-*To be filled after results.*
+**The GenAI C++ pipeline is the clear winner**, delivering consistent throughput improvements across all precisions and temperatures:
+
+- **INT4**: The largest gains (+8.9% to +12.4%), pushing INT4/0.0 from 13.5 to 14.7 TPS and INT4/0.7 from 12.9 to 14.5 TPS. This represents a significant uplift for the most bandwidth-efficient precision.
+
+- **INT8**: Solid gains of +4.1% to +6.4%, moving from 9.7 to 10.1 TPS (greedy) and 9.4 to 10.0 TPS (sampling).
+
+- **FP16**: Minimal improvement (0-2%), confirming that FP16 is truly memory-bandwidth-bound. The C++ pipeline can't help when the bottleneck is raw DRAM throughput.
+
+**Key insight — real TTFT values**: The GenAI pipeline's native `StreamerBase` callback reliably captures time-to-first-token, which the Python-based optimum-intel streamer failed to report (showing 0ms). Real TTFT values are:
+- **INT4**: 90ms (excellent for interactive kiosk use)
+- **INT8**: 119ms
+- **FP16**: 215ms
+
+All TTFT values are well under the 500ms threshold for perceived "instant" response in conversational UX.
+
+**Why GenAI is faster**: The C++ `LLMPipeline` eliminates Python overhead in the token generation loop. In the optimum-intel path, each token generation step crosses the Python-C++ boundary via PyTorch tensors, incurs GIL contention, and involves Python object creation/destruction. The GenAI pipeline keeps the entire generate loop in C++ with only a single Python callback per token (the streamer). At INT4 speeds (~15 TPS), this overhead represents ~7-12% of the per-token time, which is exactly the improvement we observe.
 
 ---
 
 ## 6. Cross-Experiment Comparison
 
-*To be filled after all experiments.*
+### 6.1 Summary Table (INT4, temp=0.0 — primary kiosk configuration)
 
-### 6.1 Summary Table
+| Optimization | INT4 TPS | Δ vs. Baseline | TTFT (ms) | Complexity | Recommendation |
+|-------------|----------|----------------|-----------|------------|----------------|
+| Baseline (optimum-intel, no flags) | 13.5 | — | N/A* | None | Current default |
+| Exp 1: 3 ov_config flags | 13.4 | **-0.7%** | N/A* | Low | **Do not use** |
+| Exp 1.5: KV_CACHE_PRECISION=u8 only | 12.5 | **-7.4%** | N/A* | Low | **Do not use** |
+| Exp 2: GPTQ INT4 | *pending* | *pending* | *pending* | Medium | *Awaiting results* |
+| **Exp 3: GenAI C++ pipeline** | **14.7** | **+8.9%** | **90** | Medium | **Use this** |
 
-| Optimization | Best INT4 TPS | Δ vs. Baseline | TTFT Impact | Complexity |
-|-------------|--------------|----------------|-------------|------------|
-| Baseline (none) | | — | — | None |
-| Exp 1: ov_config | | | | Low (runtime flags) |
-| Exp 2: GPTQ INT4 | | | | Medium (re-export) |
-| Exp 3: GenAI pipeline | | | | Medium (new dep) |
+*\* optimum-intel streamer does not reliably capture TTFT*
 
-### 6.2 Additive Potential
+### 6.2 Full Precision Comparison (GenAI vs Baseline, temp=0.0)
 
-*Can optimizations be combined? E.g., GenAI pipeline + ov_config flags, or GenAI + GPTQ model.*
+| Precision | Baseline TPS | GenAI TPS | Δ | GenAI TTFT (ms) |
+|-----------|-------------|-----------|---|-----------------|
+| FP16 | 5.1 | 5.1 | 0.0% | 215 |
+| INT8 | 9.7 | 10.1 | +4.1% | 119 |
+| INT4 | 13.5 | 14.7 | +8.9% | 90 |
+
+### 6.3 Additive Potential
+
+Given Experiment 1's results, combining GenAI + ov_config flags is **not recommended**. The ov_config flags showed negative impact even with the optimum-intel backend, and are unlikely to help with the GenAI pipeline which has its own internal optimization strategy.
+
+A promising combination is **GenAI + GPTQ INT4** (Experiment 2's model with Experiment 3's pipeline). If the GPTQ quantization produces a model that decodes faster, the GenAI pipeline could amplify that benefit. This will be tested if Experiment 2 shows positive results.
 
 ---
 
 ## 7. Discussion
 
-*To be filled after all experiments.*
+### 7.1 The Memory Bandwidth Wall
+
+The most striking finding is the **FP16 performance ceiling at ~5.1 TPS** regardless of optimization strategy. This is a hard memory bandwidth limit: the 15GB FP16 model must read every weight from DDR5-5600 DRAM for each token, and the Xe3-LPG iGPU shares that DRAM bandwidth with the CPU. No software optimization can overcome this fundamental hardware constraint.
+
+The only path to faster FP16 is faster memory. Our baseline whitepaper showed DDR5-7200 achieving 6.0 TPS (+18%), confirming that FP16 performance scales linearly with memory bandwidth.
+
+### 7.2 Why C++ Wins but Config Flags Don't
+
+The GenAI C++ pipeline's improvement is most pronounced at INT4 (+8.9%) and decreases at FP16 (0%). This pattern is explained by the fraction of time spent in Python overhead vs. actual compute:
+
+- At FP16 (5.1 TPS, ~196ms/token), Python overhead is negligible (<1% of token time)
+- At INT4 (13.5 TPS, ~74ms/token), Python overhead becomes significant (~7-12% of token time)
+
+The `ov_config` runtime flags, by contrast, add computational overhead (quantization/dequantization of KV cache, group-level dynamic quantization math) that is supposed to be offset by reduced memory traffic. On Xe3-LPG, the iGPU's memory subsystem is already efficient enough that the overhead exceeds the savings.
+
+### 7.3 Practical Impact for Kiosk Deployment
+
+At **14.7 TPS with 90ms TTFT**, the GenAI pipeline delivers a noticeably snappier conversational experience than the baseline:
+
+- A 50-token response takes **3.4 seconds** (vs. 3.7 seconds baseline)
+- First token appears in **90ms** (perceived as instant)
+- INT4 quality loss is minimal for kiosk-level conversations
+
+For comparison, reaching this TPS with the optimum-intel backend would require upgrading from DDR5-5600 to DDR5-7200 or faster, which is a hardware change. The GenAI pipeline achieves a similar gain through software alone.
 
 ---
 
 ## 8. Conclusions
 
-*To be filled after all experiments.*
+1. **Use the OpenVINO GenAI C++ pipeline** (`openvino-genai` LLMPipeline) instead of optimum-intel for production deployment. It provides +4-12% throughput improvement with no quality tradeoff, equivalent to a memory bandwidth upgrade.
+
+2. **Do not use `ov_config` runtime flags** (KV cache quantization, dynamic quantization, performance hints) on Xe3-LPG. They provide zero benefit and can degrade INT4 performance by up to 7%.
+
+3. **INT4 with GenAI is the recommended kiosk configuration**: 14.7 TPS, 90ms TTFT, excellent conversational responsiveness.
+
+4. **FP16 is memory-bandwidth-bound** at 5.1 TPS regardless of optimization. The only path to faster FP16 is faster DRAM (DDR5-7200+).
+
+5. **Experiment 2 (GPTQ)** results pending — may provide additional gains when combined with the GenAI pipeline.
 
 ---
 

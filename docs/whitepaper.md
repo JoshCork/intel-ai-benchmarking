@@ -12,7 +12,7 @@ This paper presents a standardized benchmarking methodology for evaluating large
 
 Our results demonstrate that INT4 quantization on an Intel Arc A770M discrete GPU achieves **31-33 tokens/sec** with greedy decoding — exceeding the 10 TPS interactive threshold by 3x — while maintaining conversational quality indistinguishable from FP16 inference. The full precision sweep across platforms reveals that **quantization yields proportionally larger gains on bandwidth-constrained iGPUs** (2.33x INT4/FP16 speedup on Lunar Lake vs 2.03x on Arc A770M).
 
-On integrated GPUs with INT4, **Lunar Lake (Xe2) achieves ~15 TPS** while **Meteor Lake (Xe-LPG) reaches only ~6.7 TPS** — a 2.2x gap explained by Lunar Lake's XMX matrix engines. At FP16, Meteor Lake manages only **3.3 TPS** — every query takes 10-26 seconds, rendering it unusable for interactive applications. Remarkably, the INT4/FP16 speedup ratio is **2.03x on both Meteor Lake and Arc A770M**, suggesting this ratio is primarily determined by model size reduction rather than hardware architecture. Lunar Lake shows a higher ratio (2.33x) due to its tighter bandwidth constraint amplifying quantization benefits. NPU inference is not currently viable for autoregressive LLM workloads due to dynamic shape constraints in the Intel NPU compiler. Temperature-based sampling (0.7) introduces a ~26-33% throughput penalty on discrete GPUs but only ~4-6% on iGPUs.
+On integrated GPUs with INT4, **Panther Lake (Xe3-LPG) with DDR5-7200 achieves 16.4 TPS** — the fastest iGPU configuration tested — while **Lunar Lake (Xe2) achieves ~15 TPS** and **Meteor Lake (Xe-LPG) reaches only ~6.7 TPS**. A controlled memory bandwidth experiment on Panther Lake — same silicon with DDR5-7200 vs DDR5-5600 — reveals an **18% throughput drop** from 22% less bandwidth, confirming that iGPU LLM inference is overwhelmingly memory-bandwidth bound. At FP16, Meteor Lake manages only **3.3 TPS** — every query takes 10-26 seconds, rendering it unusable for interactive applications. Remarkably, the INT4/FP16 speedup ratio is **2.03x on both Meteor Lake and Arc A770M**, suggesting this ratio is primarily determined by model size reduction rather than hardware architecture. Lunar Lake shows a higher ratio (2.33x) and Panther Lake with DDR5-5600 shows the highest (2.65x) due to tighter bandwidth constraints amplifying quantization benefits. NPU inference is not currently viable for autoregressive LLM workloads due to dynamic shape constraints in the Intel NPU compiler. Temperature-based sampling (0.7) introduces a ~26-33% throughput penalty on discrete GPUs but only ~4-6% on iGPUs.
 
 ---
 
@@ -42,33 +42,36 @@ We target a **retail kiosk assistant** — an interactive terminal where custome
 | friday-cork | 12th Gen Intel Core i7-12700H | ADL (Alder Lake) | Intel Arc A770M (16GB GDDR6) | Discrete (Xe-HPG) | 45W CPU / 120-150W TGP | 62 GB DDR4 |
 | LNL-GROVE | Intel Core Ultra 7 258V | LNL (Lunar Lake) | Intel Arc 140V (Xe2-LPG, integrated) | Integrated | 17W SoC | 31 GB LPDDR5X-8533 |
 | MTL-NOYCE | Intel Core Ultra 5 125H | MTL (Meteor Lake) | Intel Arc (Xe-LPG, integrated) | Integrated | 28W SoC | 62 GB DDR5-5600 |
+| PTL-FAIRCHILD | Intel Core Ultra (Panther Lake-H) | PTL (Panther Lake) | Intel Arc (Xe3-LPG, integrated) | Integrated | 25W SoC | 16 GB DDR5-7200 / 64 GB DDR5-5600 |
 
 All machines run Ubuntu 24.04 LTS with OpenVINO 2025.4.1, Python 3.12, and the Intel GPU compute runtime (NEO).
 
 #### GPU Architecture Comparison
 
-| Attribute | Arc A770M (Xe-HPG) | Arc 140V / LNL (Xe2-LPG) | MTL iGPU (Xe-LPG) |
-|-----------|-------------------|--------------------------|-------------------|
-| **Xe Cores** | 32 | 8 | 8 |
-| **XMX Matrix Engines** | 512 | 64 (8/core) | **None** |
-| **INT8 TOPS (GPU)** | 223 | 67 | 18 (vector only) |
-| **Memory Type** | 16 GB GDDR6 (dedicated) | LPDDR5X-8533 (shared) | DDR5-5600 (shared) |
-| **Memory Bus** | 256-bit | 128-bit | 128-bit |
-| **Theoretical Bandwidth** | ~512 GB/s | ~136.5 GB/s | ~89.6 GB/s |
-| **Effective Bandwidth** | ~400+ GB/s | ~95-110 GB/s | ~60-70 GB/s |
-| **NPU** | N/A | NPU4 (48 TOPS) | NPU3 (11 TOPS) |
+| Attribute | Arc A770M (Xe-HPG) | Arc 140V / LNL (Xe2-LPG) | PTL iGPU (Xe3-LPG) | MTL iGPU (Xe-LPG) |
+|-----------|-------------------|--------------------------|---------------------|-------------------|
+| **Xe Cores** | 32 | 8 | 12 | 8 |
+| **XMX Matrix Engines** | 512 | 64 (8/core) | 96 (8/core) | **None** |
+| **INT8 TOPS (GPU)** | 223 | 67 | ~85 (estimated) | 18 (vector only) |
+| **Memory Type** | 16 GB GDDR6 (dedicated) | LPDDR5X-8533 (shared) | DDR5-7200 (SODIMM) / DDR5-5600 (SODIMM) | DDR5-5600 (shared) |
+| **Memory Bus** | 256-bit | 128-bit | 128-bit | 128-bit |
+| **Theoretical Bandwidth** | ~512 GB/s | ~136.5 GB/s | ~115 GB/s (7200) / ~90 GB/s (5600) | ~89.6 GB/s |
+| **Effective Bandwidth** | ~400+ GB/s | ~95-110 GB/s | ~80-90 GB/s (7200) / ~60-70 GB/s (5600) | ~60-70 GB/s |
+| **NPU** | N/A | NPU4 (48 TOPS) | NPU5 | NPU3 (11 TOPS) |
 
-**Key architectural difference**: Meteor Lake's iGPU **lacks XMX matrix engines** entirely — all INT8/INT4 computation runs on standard vector units via DP4a instructions. Lunar Lake's Xe2 introduces XMX to the iGPU for the first time, providing ~3.7x the INT8 AI compute at the same core count. The Arc A770M has 4x the Xe cores *and* XMX, giving it overwhelming compute density.
+**Key architectural difference**: Meteor Lake's iGPU **lacks XMX matrix engines** entirely — all INT8/INT4 computation runs on standard vector units via DP4a instructions. Lunar Lake's Xe2 introduces XMX to the iGPU for the first time, providing ~3.7x the INT8 AI compute at the same core count. Panther Lake's Xe3-LPG increases to 12 cores with 96 XMX engines, providing 50% more compute than Lunar Lake. The Arc A770M has 4x the Xe cores *and* XMX, giving it overwhelming compute density.
 
 **Memory bandwidth is the primary bottleneck** for LLM autoregressive decode. Each token requires reading the full model weights (~3.5 GB for INT4). The theoretical decode ceiling per platform:
 
 | Platform | Effective BW | Theoretical Max TPS (INT4) | Observed TPS | Efficiency |
 |----------|-------------|---------------------------|-------------|------------|
 | Arc A770M | ~400 GB/s | ~114 TPS | 31.6 TPS | ~28% |
+| PTL iGPU (DDR5-7200) | ~85 GB/s | ~24 TPS | 16.4 TPS | ~68% |
+| PTL iGPU (DDR5-5600) | ~65 GB/s | ~19 TPS | 13.5 TPS | ~71% |
 | Lunar Lake iGPU | ~100 GB/s | ~29 TPS | 14.9 TPS | ~51% |
 | Meteor Lake iGPU | ~65 GB/s | ~19 TPS | 6.7 TPS | ~35% |
 
-Lunar Lake achieves the highest memory bandwidth efficiency (51%) likely due to on-package LPDDR5X providing lower latency. Meteor Lake's moderate efficiency (35%) reflects the compute bottleneck from missing XMX engines — the vector-only pipeline cannot fully saturate available bandwidth for INT4 matrix operations.
+Panther Lake achieves the highest memory bandwidth efficiency (68-71%), likely due to a combination of Xe3's improved memory access patterns and the SODIMM interface characteristics. Lunar Lake achieves strong efficiency (51%) due to on-package LPDDR5X providing lower latency. Meteor Lake's moderate efficiency (35%) reflects the compute bottleneck from missing XMX engines — the vector-only pipeline cannot fully saturate available bandwidth for INT4 matrix operations.
 
 ---
 
@@ -746,9 +749,179 @@ Even with INT4, Meteor Lake's GPU cannot reach the 10 TPS kiosk target. The comb
 
 ---
 
-## 7. Analysis
+## 7. Results — Intel Panther Lake iGPU (PTL-FAIRCHILD)
 
-### 7.1 Throughput Scaling Across Precisions
+**Machine**: Intel Core Ultra (Panther Lake-H), 25W, Ubuntu 24.04
+**OpenVINO**: 2025.4.1 | **GPU**: Intel Arc (Xe3-LPG, 12 Xe3 cores, 96 XMX engines) | **NPU**: Panther Lake NPU5
+
+> **Note**: PTL-FAIRCHILD was tested with two memory configurations to measure memory bandwidth sensitivity:
+> - **Config A**: 2x8GB DDR5-7200 Micron SODIMM (16GB total, ~115 GB/s)
+> - **Config B**: 2x32GB DDR5-5600 SODIMM (64GB total, ~90 GB/s)
+> INT4 and INT8 results are available for both configs. FP16 (15 GB model) was only tested with Config B (64GB) as Config A (16GB) lacked sufficient headroom.
+
+### 7.1 INT4 Performance — Config A (DDR5-7200) vs Config B (DDR5-5600)
+
+#### GPU INT4 — Config A (DDR5-7200)
+
+| Scenario | Temp | TPS Mean | TPS Median | TPS P95 | TTFT Mean | Total Mean | Runs |
+|----------|------|----------|------------|---------|-----------|------------|------|
+| greeting | 0.0 | 16.2 | 16.3 | 16.3 | 0 ms | 1,177 ms | 10 |
+| store_hours | 0.0 | 16.5 | 16.6 | 16.7 | 0 ms | 2,300 ms | 10 |
+| product_lookup | 0.0 | 16.3 | 16.4 | 16.5 | 0 ms | 3,876 ms | 10 |
+| return_policy | 0.0 | 16.4 | 16.4 | 16.4 | 0 ms | 3,294 ms | 10 |
+| loyalty_program | 0.0 | 16.6 | 16.6 | 16.6 | 0 ms | 4,592 ms | 10 |
+| multi_turn_directions | 0.0 | 16.4 | 16.4 | 16.5 | 0 ms | 3,050 ms | 10 |
+| multi_turn_troubleshoot | 0.0 | 16.2 | 16.2 | 16.3 | 0 ms | 2,344 ms | 10 |
+| | | | | | | | |
+| greeting | 0.7 | 15.0 | 14.9 | 15.7 | 0 ms | 855 ms | 10 |
+| store_hours | 0.7 | 15.7 | 15.7 | 16.0 | 0 ms | 2,317 ms | 10 |
+| product_lookup | 0.7 | 15.7 | 15.7 | 15.9 | 0 ms | 4,029 ms | 10 |
+| return_policy | 0.7 | 15.4 | 15.4 | 15.7 | 0 ms | 4,614 ms | 10 |
+| loyalty_program | 0.7 | 15.5 | 15.5 | 15.8 | 0 ms | 4,896 ms | 10 |
+| multi_turn_directions | 0.7 | 15.5 | 15.5 | 15.8 | 0 ms | 3,396 ms | 10 |
+| multi_turn_troubleshoot | 0.7 | 15.5 | 15.6 | 15.7 | 0 ms | 2,755 ms | 10 |
+
+#### GPU INT4 — Config B (DDR5-5600)
+
+| Scenario | Temp | TPS Mean | TPS Median | TPS P95 | TTFT Mean | Total Mean | Runs |
+|----------|------|----------|------------|---------|-----------|------------|------|
+| greeting | 0.0 | 13.3 | 13.3 | 13.3 | 0 ms | 977 ms | 10 |
+| store_hours | 0.0 | 13.7 | 13.7 | 13.7 | 0 ms | 2,778 ms | 10 |
+| product_lookup | 0.0 | 13.5 | 13.5 | 13.6 | 0 ms | 3,844 ms | 10 |
+| return_policy | 0.0 | 13.6 | 13.6 | 13.6 | 0 ms | 4,712 ms | 10 |
+| loyalty_program | 0.0 | 13.6 | 13.6 | 13.7 | 0 ms | 5,572 ms | 10 |
+| multi_turn_directions | 0.0 | 13.5 | 13.5 | 13.5 | 0 ms | 3,696 ms | 10 |
+| multi_turn_troubleshoot | 0.0 | 13.4 | 13.4 | 13.4 | 0 ms | 2,834 ms | 10 |
+| | | | | | | | |
+| greeting | 0.7 | 12.7 | 12.8 | 13.0 | 0 ms | 970 ms | 10 |
+| store_hours | 0.7 | 13.2 | 13.2 | 13.3 | 0 ms | 2,984 ms | 10 |
+| product_lookup | 0.7 | 13.0 | 13.1 | 13.2 | 0 ms | 4,751 ms | 10 |
+| return_policy | 0.7 | 12.8 | 12.8 | 13.0 | 0 ms | 5,427 ms | 10 |
+| loyalty_program | 0.7 | 12.9 | 12.8 | 13.0 | 0 ms | 5,986 ms | 10 |
+| multi_turn_directions | 0.7 | 13.0 | 13.0 | 13.2 | 0 ms | 4,334 ms | 10 |
+| multi_turn_troubleshoot | 0.7 | 13.0 | 13.0 | 13.1 | 0 ms | 3,555 ms | 10 |
+
+**Key findings — PTL GPU INT4:**
+- **Config A (DDR5-7200)**: Greedy **16.4 TPS mean** — the fastest iGPU configuration tested, exceeding Lunar Lake by 10%
+- **Config B (DDR5-5600)**: Greedy **13.5 TPS mean** — an **18% drop** from Config A, demonstrating clear memory bandwidth sensitivity
+- PTL with DDR5-7200 benefits from both more Xe cores (12 vs 8) and faster memory; with DDR5-5600, the bandwidth reduction negates the architectural advantages
+- Sampling penalty: ~6% on both configs, consistent with other iGPU platforms
+- GPU provides **~2.1x speedup** over CPU on PTL (16.4 vs ~7.9 TPS with DDR5-7200)
+
+### 7.2 INT8 Performance — GPU
+
+#### GPU INT8 — Config A (DDR5-7200)
+
+| Scenario | Temp | TPS Mean | TPS Median | TPS P95 | TTFT Mean | Total Mean | Runs |
+|----------|------|----------|------------|---------|-----------|------------|------|
+| greeting | 0.0 | 11.8 | 11.8 | 11.8 | 0 ms | 1,106 ms | 10 |
+| store_hours | 0.0 | 11.9 | 11.9 | 12.0 | 0 ms | 3,273 ms | 10 |
+| product_lookup | 0.0 | 11.9 | 11.9 | 11.9 | 0 ms | 4,296 ms | 10 |
+| return_policy | 0.0 | 11.9 | 11.9 | 11.9 | 0 ms | 5,647 ms | 10 |
+| loyalty_program | 0.0 | 12.0 | 12.0 | 12.0 | 0 ms | 6,016 ms | 10 |
+| multi_turn_directions | 0.0 | 12.0 | 12.0 | 12.0 | 0 ms | 4,178 ms | 10 |
+| multi_turn_troubleshoot | 0.0 | 12.0 | 12.0 | 12.0 | 0 ms | 4,180 ms | 10 |
+| | | | | | | | |
+| greeting | 0.7 | 11.4 | 11.5 | 11.6 | 0 ms | 1,241 ms | 10 |
+| store_hours | 0.7 | 11.6 | 11.7 | 11.7 | 0 ms | 3,475 ms | 10 |
+| product_lookup | 0.7 | 11.7 | 11.7 | 11.7 | 0 ms | 5,043 ms | 10 |
+| return_policy | 0.7 | 11.5 | 11.6 | 11.7 | 0 ms | 5,753 ms | 10 |
+| loyalty_program | 0.7 | 11.5 | 11.7 | 11.7 | 0 ms | 6,616 ms | 10 |
+| multi_turn_directions | 0.7 | 11.6 | 11.7 | 11.7 | 0 ms | 4,818 ms | 10 |
+| multi_turn_troubleshoot | 0.7 | 11.6 | 11.7 | 11.7 | 0 ms | 4,082 ms | 10 |
+
+#### GPU INT8 — Config B (DDR5-5600)
+
+| Scenario | Temp | TPS Mean | TPS Median | TPS P95 | TTFT Mean | Total Mean | Runs |
+|----------|------|----------|------------|---------|-----------|------------|------|
+| greeting | 0.0 | 9.6 | 9.6 | 9.7 | 0 ms | 1,350 ms | 10 |
+| store_hours | 0.0 | 9.8 | 9.8 | 9.8 | 0 ms | 4,001 ms | 10 |
+| product_lookup | 0.0 | 9.7 | 9.7 | 9.8 | 0 ms | 5,236 ms | 10 |
+| return_policy | 0.0 | 9.8 | 9.8 | 9.8 | 0 ms | 6,869 ms | 10 |
+| loyalty_program | 0.0 | 9.8 | 9.8 | 9.8 | 0 ms | 7,378 ms | 10 |
+| multi_turn_directions | 0.0 | 9.8 | 9.8 | 9.8 | 0 ms | 5,129 ms | 10 |
+| multi_turn_troubleshoot | 0.0 | 9.7 | 9.7 | 9.8 | 0 ms | 5,132 ms | 10 |
+| | | | | | | | |
+| greeting | 0.7 | 9.2 | 9.3 | 9.4 | 0 ms | 1,542 ms | 10 |
+| store_hours | 0.7 | 9.4 | 9.3 | 9.5 | 0 ms | 4,568 ms | 10 |
+| product_lookup | 0.7 | 9.5 | 9.5 | 9.5 | 0 ms | 6,414 ms | 10 |
+| return_policy | 0.7 | 9.4 | 9.4 | 9.5 | 0 ms | 7,399 ms | 10 |
+| loyalty_program | 0.7 | 9.4 | 9.4 | 9.4 | 0 ms | 7,755 ms | 10 |
+| multi_turn_directions | 0.7 | 9.4 | 9.5 | 9.5 | 0 ms | 5,909 ms | 10 |
+| multi_turn_troubleshoot | 0.7 | 9.4 | 9.5 | 9.5 | 0 ms | 4,985 ms | 10 |
+
+**Key findings — PTL GPU INT8:**
+- **Config A (DDR5-7200)**: Greedy **11.9 TPS mean** — comfortably above the 10 TPS kiosk target, and faster than LNL (10.2 TPS)
+- **Config B (DDR5-5600)**: Greedy **9.7 TPS mean** — an **18% drop**, falling just below the kiosk target
+- INT4/INT8 speedup: 1.38x (Config A) and 1.39x (Config B) — consistent across memory configs
+
+### 7.3 FP16 Performance — GPU (Config B only)
+
+> *FP16 (15 GB model) was only tested with Config B (2x32GB DDR5-5600, 64GB total). Config A (2x8GB DDR5-7200, 16GB total) lacked sufficient memory headroom.*
+
+#### GPU FP16 — Config B (DDR5-5600)
+
+| Scenario | Temp | TPS Mean | TPS Median | TPS P95 | TTFT Mean | Total Mean | Runs |
+|----------|------|----------|------------|---------|-----------|------------|------|
+| greeting | 0.0 | 5.1 | 5.1 | 5.1 | 0 ms | 2,559 ms | 10 |
+| store_hours | 0.0 | 5.1 | 5.1 | 5.1 | 0 ms | 7,618 ms | 10 |
+| product_lookup | 0.0 | 5.1 | 5.1 | 5.1 | 0 ms | 9,960 ms | 10 |
+| return_policy | 0.0 | 5.1 | 5.1 | 5.1 | 0 ms | 14,065 ms | 10 |
+| loyalty_program | 0.0 | 5.1 | 5.1 | 5.1 | 0 ms | 15,035 ms | 10 |
+| multi_turn_directions | 0.0 | 5.1 | 5.1 | 5.1 | 0 ms | 9,957 ms | 10 |
+| multi_turn_troubleshoot | 0.0 | 5.1 | 5.1 | 5.1 | 0 ms | 9,959 ms | 10 |
+| | | | | | | | |
+| greeting | 0.7 | 5.0 | 5.0 | 5.0 | 0 ms | 3,091 ms | 10 |
+| store_hours | 0.7 | 5.0 | 5.0 | 5.0 | 0 ms | 8,751 ms | 10 |
+| product_lookup | 0.7 | 5.0 | 5.0 | 5.0 | 0 ms | 12,714 ms | 10 |
+| return_policy | 0.7 | 5.0 | 5.0 | 5.0 | 0 ms | 13,967 ms | 10 |
+| loyalty_program | 0.7 | 5.0 | 5.0 | 5.0 | 0 ms | 13,982 ms | 10 |
+| multi_turn_directions | 0.7 | 5.0 | 5.0 | 5.0 | 0 ms | 12,786 ms | 10 |
+| multi_turn_troubleshoot | 0.7 | 5.0 | 5.0 | 5.0 | 0 ms | 9,599 ms | 10 |
+
+**Key findings — PTL GPU FP16:**
+- Greedy: **5.1 TPS mean** — below the kiosk target but faster than MTL (3.3 TPS) and slower than LNL (6.4 TPS)
+- The DDR5-5600 bandwidth bottleneck is severe — PTL's 12 Xe3 cores and 96 XMX engines are heavily underutilized
+- Extremely low variance (all scenarios near-identical TPS) — the pipeline is completely bandwidth-saturated
+
+### 7.4 Memory Bandwidth Sensitivity
+
+This is the key new insight from PTL testing. The same GPU architecture with different DRAM speeds:
+
+| Precision | DDR5-7200 TPS | DDR5-5600 TPS | Delta | Bandwidth Ratio |
+|-----------|:------------:|:------------:|:-----:|:---------------:|
+| INT4 | 16.4 | 13.5 | **-18%** | 7200/5600 = 1.29x |
+| INT8 | 11.9 | 9.7 | **-18%** | 7200/5600 = 1.29x |
+| FP16 | N/A (16GB) | 5.1 | — | — |
+
+The 22% reduction in memory bandwidth (DDR5-7200 → DDR5-5600) translates to a consistent **18% throughput reduction** across both INT4 and INT8. This near-linear relationship (18% TPS drop / 22% bandwidth drop = 0.82 elasticity) confirms that iGPU LLM inference is overwhelmingly memory-bandwidth bound. The slightly sub-linear elasticity suggests a small portion of execution time is compute-bound or involves fixed overhead.
+
+### 7.5 Precision Comparison (PTL-FAIRCHILD, GPU, Greedy)
+
+**Config A (DDR5-7200):**
+
+| Precision | Model Size | Greedy TPS | Speedup vs FP16* | vs Kiosk Target |
+|-----------|-----------|-----------|------------------|-----------------|
+| INT8 | 7.5 GB | 11.9 | — | **1.19x** |
+| INT4 | 5.2 GB | 16.4 | — | **1.64x** |
+
+*FP16 not tested on Config A (insufficient RAM)
+
+**Config B (DDR5-5600):**
+
+| Precision | Model Size | Greedy TPS | Speedup vs FP16 | vs Kiosk Target |
+|-----------|-----------|-----------|------------------|-----------------|
+| FP16 | 15 GB | 5.1 | 1.0x (baseline) | 0.51x |
+| INT8 | 7.5 GB | 9.7 | **1.90x** | 0.97x |
+| INT4 | 5.2 GB | 13.5 | **2.65x** | **1.35x** |
+
+PTL with DDR5-5600 shows the **highest INT4/FP16 speedup ratio** of any platform tested (2.65x), exceeding Lunar Lake's 2.33x. This makes sense: the tighter bandwidth constraint (DDR5-5600 < LPDDR5X-8533) amplifies the benefit of model size reduction. More Xe cores (12 vs 8) with XMX engines mean the GPU has excess compute capacity — further shifting the bottleneck to bandwidth and rewarding quantization.
+
+---
+
+## 8. Analysis
+
+### 8.1 Throughput Scaling Across Precisions
 
 The three precision levels demonstrate clear throughput hierarchies, with quantization gains amplified on bandwidth-constrained platforms:
 
@@ -768,6 +941,21 @@ The three precision levels demonstrate clear throughput hierarchies, with quanti
 | INT8 | 7.5 GB | 10.2 | **1.59x** | 2.0x |
 | INT4 | 5.2 GB | 14.9 | **2.33x** | 2.9x |
 
+#### PTL iGPU — Config A (~115 GB/s DDR5-7200)
+
+| Precision | Model Size | Greedy TPS | Speedup vs FP16 | Bandwidth Reduction |
+|-----------|-----------|-----------|------------------|---------------------|
+| INT8 | 7.5 GB | 11.9 | — | 2.0x |
+| INT4 | 5.2 GB | 16.4 | — | 2.9x |
+
+#### PTL iGPU — Config B (~90 GB/s DDR5-5600)
+
+| Precision | Model Size | Greedy TPS | Speedup vs FP16 | Bandwidth Reduction |
+|-----------|-----------|-----------|------------------|---------------------|
+| FP16 | 15 GB | 5.1 | 1.0x (baseline) | — |
+| INT8 | 7.5 GB | 9.7 | **1.90x** | 2.0x |
+| INT4 | 5.2 GB | 13.5 | **2.65x** | 2.9x |
+
 #### Meteor Lake iGPU (~90 GB/s DDR5-5600, no XMX)
 
 | Precision | Model Size | Greedy TPS | Speedup vs FP16 | Bandwidth Reduction |
@@ -778,9 +966,9 @@ The three precision levels demonstrate clear throughput hierarchies, with quanti
 
 LLM inference on GPUs is primarily **memory-bandwidth bound** during autoregressive decoding — each token requires reading all model weights once. Reducing weight precision directly reduces bandwidth requirements.
 
-**Quantization gains scale inversely with available bandwidth.** Lunar Lake's INT4/FP16 speedup (2.33x) exceeds the Arc A770M's (2.03x) because the shared LPDDR5X is the tighter constraint — every byte saved in model weights delivers proportionally more throughput.
+**Quantization gains scale inversely with available bandwidth.** Panther Lake with DDR5-5600 shows the highest INT4/FP16 ratio (2.65x), followed by Lunar Lake (2.33x) and the Arc A770M (2.03x). The tighter the bandwidth constraint, the more every byte saved in model weights delivers proportionally more throughput.
 
-With the complete precision sweep now available, Meteor Lake shows an INT4/FP16 speedup of **2.03x** — identical to the Arc A770M despite having no XMX engines and completely different bandwidth characteristics. This suggests the ~2x INT4/FP16 ratio is driven primarily by the model size reduction (15→5.2 GB). Lunar Lake's higher ratio (2.33x) likely reflects its tighter memory bandwidth constraint where every byte saved has proportionally more impact.
+With the complete precision sweep now available across four platforms, Meteor Lake shows an INT4/FP16 speedup of **2.03x** — identical to the Arc A770M despite having no XMX engines and completely different bandwidth characteristics. This suggests the ~2x INT4/FP16 ratio is a baseline driven primarily by model size reduction (15→5.2 GB). Platforms with tighter bandwidth constraints exceed this baseline: Lunar Lake (2.33x) and Panther Lake with DDR5-5600 (2.65x) — with Panther Lake's high ratio reflecting both its constrained bandwidth and excess compute capacity from 96 XMX engines.
 
 On the Arc A770M, INT8 achieves **1.67x** speedup with 2x bandwidth reduction — nearly linear scaling, indicating minimal dequantization overhead for 8-bit weights. INT4 achieves **2.03x** speedup with 2.9x bandwidth reduction — sub-linear scaling because:
 1. The INT4 model uses mixed precision (80% INT4, 20% INT8) — not pure INT4
@@ -788,7 +976,7 @@ On the Arc A770M, INT8 achieves **1.67x** speedup with 2x bandwidth reduction �
 3. Input embedding and output projection layers remain at higher precision
 4. Diminishing returns: the gap from INT8 to INT4 (+21%) is much smaller than FP16 to INT8 (+67%)
 
-### 7.2 Variance Characteristics
+### 8.2 Variance Characteristics
 
 | Precision | TPS Stddev (greedy) | Coefficient of Variation |
 |-----------|--------------------:|------------------------:|
@@ -805,7 +993,7 @@ Variance increases with quantization aggressiveness, likely due to:
 
 All three precisions are well within acceptable bounds for real-time applications.
 
-### 7.3 Temperature Impact
+### 8.3 Temperature Impact
 
 Sampling (temperature=0.7, top_p=0.9) reduces throughput, but the penalty varies dramatically by platform:
 
@@ -825,6 +1013,16 @@ Sampling (temperature=0.7, top_p=0.9) reduces throughput, but the penalty varies
 | INT8 | 10.2 | 9.7 | **-5%** |
 | FP16 | 6.4 | 6.1 | **-4%** |
 
+#### Panther Lake iGPU
+
+| Precision | Greedy TPS | Sampling TPS | Delta |
+|-----------|-----------|--------------|-------|
+| INT4 (7200) | 16.4 | 15.5 | **-5%** |
+| INT4 (5600) | 13.5 | 12.9 | **-4%** |
+| INT8 (7200) | 11.9 | 11.6 | **-3%** |
+| INT8 (5600) | 9.7 | 9.4 | **-3%** |
+| FP16 (5600) | 5.1 | 5.0 | **-2%** |
+
 #### Meteor Lake iGPU
 
 | Precision | Greedy TPS | Sampling TPS | Delta |
@@ -841,7 +1039,7 @@ On the Arc A770M, the GPU generates tokens fast enough that the sampling overhea
 3. **Random sampling**: The sampling step itself adds overhead
 4. **Variable output length**: Temperature sampling produces more variable-length responses (higher average token count)
 
-### 7.4 Quality Assessment
+### 8.4 Quality Assessment
 
 **Greedy across all precisions**: FP16, INT8, and INT4 produce nearly identical responses for the same prompts. The `greeting` and `store_hours` scenarios generate word-for-word identical or near-identical text across all three precisions. Longer scenarios show minor phrasing differences (e.g., "10% off your purchase today" vs "10% off your first purchase today") but equivalent quality and factual consistency.
 
@@ -853,7 +1051,7 @@ On the Arc A770M, the GPU generates tokens fast enough that the sampling overhea
 
 **Key observation**: Neither INT8 nor INT4 quantization causes perceptible quality degradation for conversational kiosk tasks. The NNCF calibration (AWQ for INT4, per-channel asymmetric for INT8) effectively preserves model quality while delivering substantial throughput gains.
 
-### 7.5 TTFT Performance
+### 8.5 TTFT Performance
 
 All configurations achieve TTFT < 2ms — orders of magnitude below the 100ms perceptual threshold. This is because:
 1. The OpenVINO model is pre-compiled at load time
@@ -861,13 +1059,15 @@ All configurations achieve TTFT < 2ms — orders of magnitude below the 100ms pe
 3. The first-token computation involves a single forward pass through the model
 4. Input sequences are short (< 100 tokens for most scenarios)
 
-### 7.6 Cross-Platform Comparison
+### 8.6 Cross-Platform Comparison
 
 #### By Precision — GPU Greedy (temp=0.0)
 
 | Platform | INT4 TPS | INT8 TPS | FP16 TPS | INT4/FP16 Ratio |
 |----------|----------|----------|----------|-----------------|
 | **Arc A770M** (friday-cork) | **31.6** | **26.1** | **15.6** | 2.03x |
+| **Panther Lake** (PTL, DDR5-7200) | **16.4** | **11.9** | — | — |
+| **Panther Lake** (PTL, DDR5-5600) | **13.5** | **9.7** | **5.1** | 2.65x |
 | **Lunar Lake** (LNL-GROVE) | **14.9** | **10.2** | **6.4** | 2.33x |
 | **Meteor Lake** (MTL-NOYCE) | **6.7** | **5.2** | **3.3** | 2.03x |
 
@@ -876,26 +1076,32 @@ All configurations achieve TTFT < 2ms — orders of magnitude below the 100ms pe
 | Platform | GPU Architecture | XMX | Memory BW | GPU TPS | CPU TPS | GPU/CPU Ratio | TPS/Watt |
 |----------|-----------------|-----|-----------|---------|---------|---------------|----------|
 | **Arc A770M** (friday-cork) | Xe-HPG, 32 cores | 512 engines | ~512 GB/s dedicated | **31.6** | — | — | ~0.23 |
+| **Panther Lake** (DDR5-7200) | Xe3-LPG, 12 cores | 96 engines | ~115 GB/s shared | **16.4** | 7.9 | 2.08x | ~0.66 |
+| **Panther Lake** (DDR5-5600) | Xe3-LPG, 12 cores | 96 engines | ~90 GB/s shared | **13.5** | 7.3 | 1.85x | ~0.54 |
 | **Lunar Lake** (LNL-GROVE) | Xe2-LPG, 8 cores | 64 engines | ~136 GB/s shared | **14.9** | 8.0 | 1.86x | ~0.88 |
 | **Meteor Lake** (MTL-NOYCE) | Xe-LPG, 8 cores | **None** | ~90 GB/s shared | **6.7** | 5.4 | 1.24x | ~0.24 |
 
 **Key insights:**
 
-1. **Discrete vs integrated**: The Arc A770M delivers **2.1x** the throughput of Lunar Lake's iGPU and **4.7x** Meteor Lake's iGPU. The primary differentiator is dedicated GDDR6 bandwidth (~512 GB/s vs ~100-120 GB/s shared LPDDR5X).
+1. **Discrete vs integrated**: The Arc A770M delivers **1.9-2.1x** the throughput of the best iGPU configurations and **4.7x** Meteor Lake's iGPU. The primary differentiator is dedicated GDDR6 bandwidth (~512 GB/s vs ~90-136 GB/s shared).
 
-2. **XMX is transformative for iGPU LLM inference**: Lunar Lake (with XMX) achieves **2.2x** the GPU throughput of Meteor Lake (without XMX) despite having the same number of Xe cores and similar memory bandwidth. The absence of XMX engines is the single biggest factor limiting Meteor Lake's LLM performance.
+2. **Panther Lake (DDR5-7200) is the fastest iGPU**: At 16.4 TPS, PTL with fast memory exceeds Lunar Lake (14.9 TPS) by 10%, driven by 50% more Xe cores and XMX engines. However, with DDR5-5600, PTL drops to 13.5 TPS — below Lunar Lake — demonstrating that memory bandwidth can negate architectural advantages.
 
-3. **Lunar Lake's GPU/CPU ratio (1.86x) vs Meteor Lake's (1.24x)** directly illustrates the XMX value. Without tensor acceleration, the GPU can barely outpace the CPU for matrix-heavy LLM workloads.
+3. **XMX is transformative for iGPU LLM inference**: Lunar Lake (with XMX) achieves **2.2x** the GPU throughput of Meteor Lake (without XMX) despite having the same number of Xe cores and similar memory bandwidth. The absence of XMX engines is the single biggest factor limiting Meteor Lake's LLM performance.
 
-4. **Power efficiency**: Lunar Lake achieves **~0.88 TPS/W** at the SoC level — nearly **4x more efficient** than the Arc A770M (~0.23 TPS/W). For battery-powered or thermally constrained deployments, Lunar Lake offers the best inference per watt.
+4. **GPU/CPU ratios track XMX presence and core count**: Panther Lake (2.08x with DDR5-7200), Lunar Lake (1.86x), and Meteor Lake (1.24x) show that GPU acceleration scales with both XMX availability and core count.
 
-5. **Temperature sensitivity varies by platform**: Sampling (t=0.7) causes a ~26-33% throughput hit on the Arc A770M but only ~4-6% on the iGPU platforms. This suggests the sampling overhead (softmax, top-p filtering) is proportionally smaller when the overall pipeline is slower.
+5. **Power efficiency**: Lunar Lake achieves **~0.88 TPS/W** at the SoC level — nearly **4x more efficient** than the Arc A770M (~0.23 TPS/W). Panther Lake with DDR5-7200 achieves ~0.66 TPS/W at 25W — strong efficiency at higher absolute performance. For battery-powered or thermally constrained deployments, Lunar Lake offers the best inference per watt.
 
-6. **Quantization yields bigger gains on bandwidth-constrained platforms**: The INT4/FP16 speedup ratio is **2.33x on Lunar Lake** vs **2.03x on the Arc A770M**. Shared LPDDR5X is the tighter bottleneck, so every byte of model size reduction has proportionally more impact.
+6. **Temperature sensitivity varies by platform**: Sampling (t=0.7) causes a ~26-33% throughput hit on the Arc A770M but only ~2-6% on the iGPU platforms. This suggests the sampling overhead (softmax, top-p filtering) is proportionally smaller when the overall pipeline is slower.
 
-7. **On Meteor Lake, INT8 GPU (5.2 TPS) is slower than INT4 CPU (5.4 TPS)**: Without XMX, the GPU cannot compensate for the 44% larger model size. This is the strongest evidence that memory bandwidth — not compute — is the primary bottleneck for LLM inference on integrated GPUs.
+7. **Quantization yields bigger gains on bandwidth-constrained platforms**: The INT4/FP16 speedup ratio reaches **2.65x on Panther Lake (DDR5-5600)**, **2.33x on Lunar Lake**, and **2.03x on Arc A770M and Meteor Lake**. Tighter bandwidth constraints amplify the benefit of model size reduction.
 
-### 7.7 NPU Limitations for LLM Inference
+8. **Memory bandwidth is the dominant variable**: The PTL dual-config experiment (same silicon, different DRAM) shows a 0.82 elasticity coefficient — 22% less bandwidth produces 18% less throughput, consistently across INT4 and INT8.
+
+9. **On Meteor Lake, INT8 GPU (5.2 TPS) is slower than INT4 CPU (5.4 TPS)**: Without XMX, the GPU cannot compensate for the 44% larger model size. This remains the strongest evidence that the architectural bottleneck varies by platform.
+
+### 8.7 NPU Limitations for LLM Inference
 
 Both Lunar Lake (NPU4, 48 TOPS) and Meteor Lake (NPU3, 11 TOPS) failed to run the Llama 3.1 8B model. The root cause is architectural: Intel's NPU compiler (`vpux-compiler`) requires static tensor shapes at compilation time, but autoregressive LLM generation uses dynamic sequence lengths that grow with each token.
 
@@ -905,20 +1111,34 @@ This is consistent with public research and Intel's own documentation: NPUs are 
 
 **Future outlook**: Intel's Panther Lake (PTL) with NPU5 and the research project Agent.xpu demonstrate that heterogeneous GPU+NPU inference for LLMs is technically feasible, with the NPU handling prefill while the GPU handles decode. However, this is not yet available in production OpenVINO releases.
 
-### 7.8 Panther Lake Projections
+### 8.8 Panther Lake: Projections vs Reality
 
-Based on architectural analysis (Xe3-LPG, up to 12 Xe cores, 96 XMX engines, LPDDR5X-9600 at ~154 GB/s), Panther Lake's iGPU is projected to achieve **20-25 TPS** for INT4 Llama 3.1 8B — roughly 1.3-1.5x Lunar Lake's performance. Key improvements:
+The original projection for Panther Lake was **20-25 TPS** for INT4, based on an assumed LPDDR5X-9600 memory subsystem (~154 GB/s). The actual result with DDR5-7200 SODIMMs: **16.4 TPS** — below the projected range.
 
-- 50% more Xe cores (12 vs 8) with XMX retained
-- 2x L2 cache (16 MB vs 8 MB) reducing DRAM traffic per token
-- ~13% more memory bandwidth (LPDDR5X-9600 vs 8533)
-- Platform AI TOPS up to 180 (vs 120 on Lunar Lake)
+However, the projection assumed LPDDR5X-9600 (~154 GB/s), while the CRB (Customer Reference Board) uses DDR5 SODIMMs instead. When bandwidth-adjusted, the result aligns well: 16.4 TPS * (154/115) = **~22 TPS**, squarely within the original projection range.
 
-This would place Panther Lake's iGPU performance in the range of **half an Arc A770M** at a fraction of the power budget — a significant milestone for on-device LLM inference.
+The memory bandwidth sensitivity experiment confirms this interpretation: PTL's Xe3 architecture has the compute headroom to deliver higher throughput, but is starved by SODIMM bandwidth. The 18% throughput drop from DDR5-7200 to DDR5-5600 — with identical silicon — proves the bottleneck is memory, not compute.
+
+**Projection for production Panther Lake devices**: Systems with LPDDR5X-8533 (matching Lunar Lake's memory type) should achieve **~18-20 TPS** based on the bandwidth scaling observed. This would represent a meaningful improvement over Lunar Lake (14.9 TPS) driven primarily by the 50% increase in Xe cores and XMX engines.
+
+### 8.9 Memory Bandwidth as the Dominant Variable
+
+The PTL dual-configuration experiment provides the first controlled test in this study isolating memory bandwidth from all other variables. Same silicon, same firmware, same drivers, same OpenVINO version — only the DRAM modules changed.
+
+**Results:**
+- 22% bandwidth reduction (DDR5-7200 → DDR5-5600) produced an **18% throughput drop**
+- The **0.82 elasticity coefficient** (18% / 22%) was identical for both INT4 and INT8
+- This near-linear relationship confirms that autoregressive LLM decode on iGPUs is overwhelmingly memory-bandwidth bound
+
+**Implications for system design:**
+- Memory speed selection is as important as GPU architecture for iGPU LLM inference
+- DDR5-7200 SODIMMs provide a meaningful performance boost over DDR5-5600 for edge AI workloads — a 29% bandwidth advantage translates to ~22% higher throughput
+- For OEMs designing edge AI systems, the memory subsystem deserves as much attention as the SoC selection
+- The slightly sub-linear elasticity (0.82 < 1.0) suggests a small fixed-overhead component, but the dominant factor is unmistakably bandwidth
 
 ---
 
-## 8. Results Status
+## 9. Results Status
 
 | Machine | Device | Precision | Status |
 |---------|--------|-----------|--------|
@@ -933,10 +1153,13 @@ This would place Panther Lake's iGPU performance in the range of **half an Arc A
 | MTL-NOYCE (Meteor Lake) | GPU | INT8 | **Complete** |
 | MTL-NOYCE (Meteor Lake) | NPU | INT4 | **Failed** (dynamic shapes) |
 | MTL-NOYCE (Meteor Lake) | GPU | FP16 | **Complete** — after RAM upgrade to 62 GB DDR5-5600 |
+| PTL-FAIRCHILD (Panther Lake) | CPU | INT4, INT8, FP16 | **Complete** — DDR5-7200 + DDR5-5600 |
+| PTL-FAIRCHILD (Panther Lake) | GPU | INT4, INT8 | **Complete** — DDR5-7200 + DDR5-5600 |
+| PTL-FAIRCHILD (Panther Lake) | GPU | FP16 | **Complete** — DDR5-5600 only (16GB insufficient for FP16) |
 
 ---
 
-## 9. Software Stack
+## 10. Software Stack
 
 | Component | Version |
 |-----------|---------|
@@ -951,7 +1174,7 @@ This would place Panther Lake's iGPU performance in the range of **half an Arc A
 
 ---
 
-## 10. Reproducibility
+## 11. Reproducibility
 
 All benchmark code, scenarios, and configuration are open source:
 
@@ -1007,4 +1230,4 @@ ORDER BY r.scenario_name, m.run_number;
 
 ---
 
-*All GPU benchmark configurations across three platforms and three precision levels are now complete. This document may be updated as additional hardware (e.g., Panther Lake) becomes available for testing.*
+*All GPU benchmark configurations across four platforms (Arc A770M, Lunar Lake, Meteor Lake, and Panther Lake) and three precision levels are now complete. Panther Lake results include a dual-memory-configuration experiment demonstrating memory bandwidth sensitivity.*
