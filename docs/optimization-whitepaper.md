@@ -183,35 +183,51 @@ python3 benchmark.py --precision FP16 INT8 INT4 --device GPU \
 
 ## 4. Experiment 2 Results: GPTQ INT4 with Scale Estimation
 
-*To be filled after running experiment.*
-
 ### 4.1 Configuration
 
 ```bash
-# Export
-python3 scripts/export_model.py \
-  --model meta-llama/Llama-3.1-8B-Instruct \
-  --precision INT4 --algorithm gptq \
-  --dataset wikitext2 --num-samples 128 --suffix "-gptq"
+# Export (ran on Noyce — CPU-only, ~8 hours)
+optimum-cli export openvino \
+  -m meta-llama/Llama-3.1-8B-Instruct \
+  --weight-format int4 --gptq --scale-estimation \
+  --dataset wikitext2 --group-size 128 --num-samples 128 \
+  ~/models/intel-bench/Llama-3.1-8B-Instruct-INT4-gptq
 
-# Benchmark
+# Benchmark (optimum backend)
 python3 benchmark.py --precision INT4 --device GPU \
   --temperature 0.0 0.7 --codename PTL --tdp 25W \
   --experiment "PTL-gptq-INT4-DDR5-5600" \
   --model-suffix "-gptq" \
   --db ~/intel-bench/results/benchmarks.db
+
+# Benchmark (GenAI backend)
+python3 benchmark.py --precision INT4 --device GPU \
+  --temperature 0.0 0.7 --codename PTL --tdp 25W \
+  --experiment "PTL-gptq-genai-INT4-DDR5-5600" \
+  --model-suffix "-gptq" --backend genai \
+  --db ~/intel-bench/results/benchmarks.db
 ```
 
 ### 4.2 Results
 
-| Precision | Temp | Baseline TPS (AWQ) | GPTQ TPS | Δ TPS | Baseline TTFT | GPTQ TTFT | Δ TTFT |
-|-----------|------|-------------------|----------|-------|--------------|-----------|--------|
-| INT4 | 0.0 | | | | | | |
-| INT4 | 0.7 | | | | | | |
+| Backend | Temp | AWQ INT4 TPS | GPTQ INT4 TPS | Δ TPS | GPTQ TTFT (ms) |
+|---------|------|-------------|---------------|-------|----------------|
+| optimum | 0.0 | 13.5 | **16.3** | **+20.7%** | N/A* |
+| optimum | 0.7 | 12.9 | **15.4** | **+19.4%** | N/A* |
+| GenAI | 0.0 | 14.7 | **17.6** | **+19.7%** | **77** |
+| GenAI | 0.7 | 14.5 | **17.3** | **+19.3%** | **78** |
+
+*\* optimum-intel streamer does not reliably capture TTFT*
 
 ### 4.3 Analysis
 
-*To be filled after results.*
+**GPTQ with scale estimation is a major win** — a consistent ~20% throughput improvement over the default AWQ quantization at INT4, regardless of backend or temperature.
+
+The GPTQ model (4.4GB) is slightly larger than the AWQ model (4.2GB), yet decodes significantly faster. This suggests that GPTQ's per-channel scale estimation produces weight layouts that are more efficient for the Xe3-LPG's INT4 compute units, likely because the scale factors better preserve the dynamic range of critical layers.
+
+**GPTQ + GenAI is the best Llama configuration**: 17.6 TPS with 77ms TTFT — a **30.4% improvement** over the AWQ optimum baseline (13.5 TPS). The GPTQ and GenAI optimizations are fully additive: GPTQ improves the model itself (~20%), GenAI improves the runtime (~9%), and the gains stack.
+
+**Export cost**: The GPTQ export with scale estimation and 128 calibration samples took ~8 hours on CPU (Noyce, 16 cores). This is a one-time cost that pays for itself immediately in production throughput.
 
 ---
 
@@ -272,17 +288,20 @@ All TTFT values are well under the 500ms threshold for perceived "instant" respo
 | Baseline (optimum-intel, no flags) | 13.5 | — | N/A* | None | Current default |
 | Exp 1: 3 ov_config flags | 13.4 | **-0.7%** | N/A* | Low | **Do not use** |
 | Exp 1.5: KV_CACHE_PRECISION=u8 only | 12.5 | **-7.4%** | N/A* | Low | **Do not use** |
-| Exp 2: GPTQ INT4 | *pending* | *pending* | *pending* | Medium | *Awaiting results* |
-| Exp 3: GenAI C++ pipeline | **14.7** | **+8.9%** | **90** | Medium | **Recommended** |
+| Exp 2: GPTQ INT4 (optimum) | **16.3** | **+20.7%** | N/A* | Medium | **Use this model** |
+| Exp 3: GenAI C++ pipeline | **14.7** | **+8.9%** | **90** | Medium | **Use this backend** |
+| **Exp 2+3: GPTQ + GenAI** | **17.6** | **+30.4%** | **77** | Medium | **Best Llama config** |
 
 #### Model Comparison (GenAI backend — best configuration)
 
 | Model + Backend | INT4 TPS | Δ vs. Llama Baseline | TTFT (ms) | Recommendation |
 |----------------|----------|---------------------|-----------|----------------|
-| Llama 3.1-8B + optimum | 13.5 | — | N/A* | Baseline |
-| Llama 3.1-8B + GenAI | 14.7 | +8.9% | 90 | Good |
-| Qwen 2.5-7B + optimum | 17.2 | +27.4% | N/A* | Better |
-| **Qwen 2.5-7B + GenAI** | **18.7** | **+38.5%** | **65** | **Best** |
+| Llama 3.1-8B AWQ + optimum | 13.5 | — | N/A* | Baseline |
+| Llama 3.1-8B AWQ + GenAI | 14.7 | +8.9% | 90 | Good |
+| Llama 3.1-8B GPTQ + optimum | 16.3 | +20.7% | N/A* | Good |
+| Llama 3.1-8B GPTQ + GenAI | **17.6** | **+30.4%** | **77** | **Best Llama** |
+| Qwen 2.5-7B AWQ + optimum | 17.2 | +27.4% | N/A* | Good |
+| **Qwen 2.5-7B AWQ + GenAI** | **18.7** | **+38.5%** | **65** | **Best overall** |
 
 *\* optimum-intel streamer does not reliably capture TTFT*
 
@@ -386,11 +405,11 @@ Even with the Llama model, the GenAI pipeline at **14.7 TPS / 90ms TTFT** provid
 
 3. **Do not use `ov_config` runtime flags** (KV cache quantization, dynamic quantization, performance hints) on Xe3-LPG. They provide zero benefit and can degrade INT4 performance by up to 7%.
 
-4. **Optimal kiosk configuration**: Qwen2.5-7B-Instruct INT4 with GenAI pipeline — **18.7 TPS, 65ms TTFT**. If Llama is required, Llama 3.1-8B INT4 with GenAI — **14.7 TPS, 90ms TTFT**.
+4. **Use GPTQ with scale estimation** instead of default AWQ quantization for INT4 models. GPTQ delivers ~20% higher throughput at INT4 with a one-time ~8-hour CPU export cost. The GPTQ and GenAI optimizations are fully additive.
 
-5. **FP16 is memory-bandwidth-bound** at 5.1-5.5 TPS regardless of model or optimization. The only path to faster FP16 is faster DRAM (DDR5-7200+).
+5. **Optimal kiosk configuration**: Qwen2.5-7B-Instruct INT4 (AWQ) with GenAI pipeline — **18.7 TPS, 65ms TTFT**. If Llama is required, Llama 3.1-8B GPTQ INT4 with GenAI — **17.6 TPS, 77ms TTFT**. A GPTQ export of Qwen2.5-7B may yield even higher numbers (not yet tested).
 
-6. **Experiment 2 (GPTQ)** results pending — may provide additional gains when combined with the GenAI pipeline.
+6. **FP16 is memory-bandwidth-bound** at 5.1-5.5 TPS regardless of model or optimization. The only path to faster FP16 is faster DRAM (DDR5-7200+).
 
 ---
 
