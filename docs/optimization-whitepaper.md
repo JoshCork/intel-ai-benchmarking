@@ -1,6 +1,6 @@
 # GPU Runtime Optimization for Intel Xe3 iGPU LLM Inference
 
-**Optimizing Llama 3.1 8B Instruct on Panther Lake Xe3-LPG with OpenVINO**
+**Optimizing LLM Inference on Panther Lake Xe3-LPG with OpenVINO**
 
 *February 2026*
 
@@ -8,9 +8,9 @@
 
 ## Abstract
 
-Building on our baseline benchmarking results (see `whitepaper.md`), this paper investigates three runtime optimization strategies for improving Llama 3.1 8B Instruct inference throughput on the Intel Xe3-LPG integrated GPU (Panther Lake H, 25W, DDR5-5600). We test each optimization independently across FP16, INT8, and INT4 precisions using standardized kiosk conversation scenarios.
+Building on our baseline benchmarking results (see `whitepaper.md`), this paper investigates runtime optimization strategies for improving LLM inference throughput on the Intel Xe3-LPG integrated GPU (Panther Lake H, 25W, DDR5-5600). We test three optimizations independently on Llama 3.1 8B Instruct, then benchmark Qwen2.5-7B-Instruct as an alternative model to evaluate the impact of architecture and model size on bandwidth-constrained hardware.
 
-**Key findings**: (1) OpenVINO runtime configuration flags (`ov_config`) — including KV cache quantization, dynamic quantization, and latency hints — provide **no benefit** and can degrade INT4 performance by up to 7.4%. (2) The OpenVINO GenAI C++ `LLMPipeline` delivers **+4-12% throughput** improvement over the Python-based optimum-intel wrapper, with INT4 improving from 13.5 to 14.7 TPS and revealing real TTFT of 90ms. (3) FP16 performance remains memory-bandwidth-bound at ~5.1 TPS regardless of optimization strategy. The GenAI pipeline is recommended for all production deployments on Xe3-LPG hardware.
+**Key findings**: (1) OpenVINO runtime configuration flags (`ov_config`) provide **no benefit** and can degrade INT4 performance by up to 7.4%. (2) The OpenVINO GenAI C++ `LLMPipeline` delivers **+4-12% throughput** over the Python-based optimum-intel wrapper. (3) **Qwen2.5-7B-Instruct is 8-28% faster than Llama 3.1-8B** across all precisions, reaching **18.7 TPS at INT4 with 65ms TTFT** — driven by fewer parameters (7B vs 8B) and Grouped Query Attention (GQA). (4) FP16 remains memory-bandwidth-bound regardless of model or optimization.
 
 ---
 
@@ -265,13 +265,24 @@ All TTFT values are well under the 500ms threshold for perceived "instant" respo
 
 ### 6.1 Summary Table (INT4, temp=0.0 — primary kiosk configuration)
 
+#### Llama 3.1-8B-Instruct Optimizations
+
 | Optimization | INT4 TPS | Δ vs. Baseline | TTFT (ms) | Complexity | Recommendation |
 |-------------|----------|----------------|-----------|------------|----------------|
 | Baseline (optimum-intel, no flags) | 13.5 | — | N/A* | None | Current default |
 | Exp 1: 3 ov_config flags | 13.4 | **-0.7%** | N/A* | Low | **Do not use** |
 | Exp 1.5: KV_CACHE_PRECISION=u8 only | 12.5 | **-7.4%** | N/A* | Low | **Do not use** |
 | Exp 2: GPTQ INT4 | *pending* | *pending* | *pending* | Medium | *Awaiting results* |
-| **Exp 3: GenAI C++ pipeline** | **14.7** | **+8.9%** | **90** | Medium | **Use this** |
+| Exp 3: GenAI C++ pipeline | **14.7** | **+8.9%** | **90** | Medium | **Recommended** |
+
+#### Model Comparison (GenAI backend — best configuration)
+
+| Model + Backend | INT4 TPS | Δ vs. Llama Baseline | TTFT (ms) | Recommendation |
+|----------------|----------|---------------------|-----------|----------------|
+| Llama 3.1-8B + optimum | 13.5 | — | N/A* | Baseline |
+| Llama 3.1-8B + GenAI | 14.7 | +8.9% | 90 | Good |
+| Qwen 2.5-7B + optimum | 17.2 | +27.4% | N/A* | Better |
+| **Qwen 2.5-7B + GenAI** | **18.7** | **+38.5%** | **65** | **Best** |
 
 *\* optimum-intel streamer does not reliably capture TTFT*
 
@@ -308,29 +319,78 @@ The GenAI C++ pipeline's improvement is most pronounced at INT4 (+8.9%) and decr
 
 The `ov_config` runtime flags, by contrast, add computational overhead (quantization/dequantization of KV cache, group-level dynamic quantization math) that is supposed to be offset by reduced memory traffic. On Xe3-LPG, the iGPU's memory subsystem is already efficient enough that the overhead exceeds the savings.
 
-### 7.3 Practical Impact for Kiosk Deployment
+### 7.3 Qwen2.5-7B vs Llama 3.1-8B: Model Architecture Impact
 
-At **14.7 TPS with 90ms TTFT**, the GenAI pipeline delivers a noticeably snappier conversational experience than the baseline:
+After establishing the GenAI C++ pipeline as the optimal backend, we benchmarked Qwen2.5-7B-Instruct alongside Llama 3.1-8B-Instruct to evaluate whether a different model architecture could further improve throughput on bandwidth-constrained Xe3-LPG hardware.
 
-- A 50-token response takes **3.4 seconds** (vs. 3.7 seconds baseline)
-- First token appears in **90ms** (perceived as instant)
-- INT4 quality loss is minimal for kiosk-level conversations
+#### 7.3.1 GenAI Backend Comparison (Best Configuration)
 
-For comparison, reaching this TPS with the optimum-intel backend would require upgrading from DDR5-5600 to DDR5-7200 or faster, which is a hardware change. The GenAI pipeline achieves a similar gain through software alone.
+| Precision | Llama 3.1-8B TPS | Qwen 2.5-7B TPS | Qwen Advantage | Llama TTFT | Qwen TTFT |
+|-----------|-----------------|-----------------|----------------|------------|-----------|
+| INT4/0.0 | 14.7 | **18.7** | **+27.2%** | 90ms | **65ms** |
+| INT4/0.7 | 14.5 | **18.4** | **+26.9%** | 90ms | **66ms** |
+| INT8/0.0 | 10.1 | **10.9** | **+7.9%** | 119ms | **103ms** |
+| INT8/0.7 | 10.0 | **10.8** | **+8.0%** | 120ms | **104ms** |
+| FP16/0.0 | 5.1 | **5.5** | **+7.8%** | 215ms | **193ms** |
+| FP16/0.7 | 5.1 | **5.5** | **+7.8%** | 215ms | **194ms** |
+
+#### 7.3.2 Optimum-Intel Backend Comparison (Baseline)
+
+| Precision | Llama 3.1-8B TPS | Qwen 2.5-7B TPS | Qwen Advantage |
+|-----------|-----------------|-----------------|----------------|
+| INT4/0.0 | 13.5 | **17.2** | **+27.4%** |
+| INT4/0.7 | 12.9 | **15.6** | **+20.9%** |
+| INT8/0.0 | 9.7 | **10.4** | **+7.2%** |
+| INT8/0.7 | 9.4 | **9.8** | **+4.3%** |
+| FP16/0.0 | 5.1 | **5.4** | **+5.9%** |
+| FP16/0.7 | 5.0 | **5.3** | **+6.0%** |
+
+#### 7.3.3 Why Qwen Is Faster
+
+The performance gap is explained by three architectural differences:
+
+1. **Fewer parameters**: Qwen2.5-7B has ~6.5B non-embedding parameters vs Llama's 8.0B — **19% fewer weights** to read from DRAM per token. On a bandwidth-bound iGPU, this translates almost linearly to throughput gains.
+
+2. **Grouped Query Attention (GQA)**: Qwen2.5-7B uses 28 query heads with only 4 KV heads (7:1 ratio), dramatically reducing KV cache size compared to Llama's layout. Smaller KV cache means less DRAM traffic during decode.
+
+3. **Amplification at INT4**: The ~27% gap at INT4 (vs ~8% at FP16/INT8) occurs because INT4 removes the weight-bandwidth bottleneck enough that KV cache and Python overhead become relatively larger. Qwen's GQA reduces the KV cache component, and the GenAI pipeline reduces the Python component — both effects compound at INT4.
+
+#### 7.3.4 GenAI Uplift per Model
+
+| Model | Precision | Optimum TPS | GenAI TPS | GenAI Uplift |
+|-------|-----------|------------|-----------|-------------|
+| Llama 3.1-8B | INT4/0.0 | 13.5 | 14.7 | +8.9% |
+| Qwen 2.5-7B | INT4/0.0 | 17.2 | 18.7 | +8.7% |
+| Llama 3.1-8B | INT8/0.0 | 9.7 | 10.1 | +4.1% |
+| Qwen 2.5-7B | INT8/0.0 | 10.4 | 10.9 | +4.8% |
+
+The GenAI C++ pipeline provides similar percentage uplift for both models (~8-9% at INT4, ~4-5% at INT8), confirming that the Python overhead reduction is model-agnostic.
+
+### 7.4 Practical Impact for Kiosk Deployment
+
+The best configuration — **Qwen2.5-7B-Instruct INT4 with GenAI pipeline** — delivers **18.7 TPS with 65ms TTFT**:
+
+- A 50-token response takes **2.7 seconds** (vs. 3.7 seconds with Llama optimum baseline)
+- First token appears in **65ms** (perceived as instant)
+- Combined software optimizations (model choice + GenAI pipeline) yield a **39% throughput improvement** over the Llama optimum baseline — equivalent to upgrading from DDR5-5600 to DDR5-8000+ in hardware terms
+
+Even with the Llama model, the GenAI pipeline at **14.7 TPS / 90ms TTFT** provides a meaningful improvement over baseline.
 
 ---
 
 ## 8. Conclusions
 
-1. **Use the OpenVINO GenAI C++ pipeline** (`openvino-genai` LLMPipeline) instead of optimum-intel for production deployment. It provides +4-12% throughput improvement with no quality tradeoff, equivalent to a memory bandwidth upgrade.
+1. **Use Qwen2.5-7B-Instruct over Llama 3.1-8B-Instruct** when throughput matters. The smaller model with GQA delivers 27% higher INT4 throughput (18.7 vs 14.7 TPS) on bandwidth-constrained Xe3-LPG hardware.
 
-2. **Do not use `ov_config` runtime flags** (KV cache quantization, dynamic quantization, performance hints) on Xe3-LPG. They provide zero benefit and can degrade INT4 performance by up to 7%.
+2. **Use the OpenVINO GenAI C++ pipeline** (`openvino-genai` LLMPipeline) instead of optimum-intel for production deployment. It provides +4-12% throughput improvement with no quality tradeoff, for both Llama and Qwen models.
 
-3. **INT4 with GenAI is the recommended kiosk configuration**: 14.7 TPS, 90ms TTFT, excellent conversational responsiveness.
+3. **Do not use `ov_config` runtime flags** (KV cache quantization, dynamic quantization, performance hints) on Xe3-LPG. They provide zero benefit and can degrade INT4 performance by up to 7%.
 
-4. **FP16 is memory-bandwidth-bound** at 5.1 TPS regardless of optimization. The only path to faster FP16 is faster DRAM (DDR5-7200+).
+4. **Optimal kiosk configuration**: Qwen2.5-7B-Instruct INT4 with GenAI pipeline — **18.7 TPS, 65ms TTFT**. If Llama is required, Llama 3.1-8B INT4 with GenAI — **14.7 TPS, 90ms TTFT**.
 
-5. **Experiment 2 (GPTQ)** results pending — may provide additional gains when combined with the GenAI pipeline.
+5. **FP16 is memory-bandwidth-bound** at 5.1-5.5 TPS regardless of model or optimization. The only path to faster FP16 is faster DRAM (DDR5-7200+).
+
+6. **Experiment 2 (GPTQ)** results pending — may provide additional gains when combined with the GenAI pipeline.
 
 ---
 
