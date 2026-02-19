@@ -63,14 +63,14 @@ Our benchmarking campaign covered five Intel platforms spanning three GPU archit
 | Platform | GPU Type | Architecture | Memory BW | Best Config TPS | TTFT | Kiosk-Viable? |
 |----------|----------|-------------|-----------|----------------|------|---------------|
 | Meteor Lake | iGPU (Xe-LPG, no XMX) | Xe | ~90 GB/s | 6.7 | — | No (marginal) |
-| Lunar Lake | iGPU (Xe2-LPG) | Xe2 | ~136 GB/s | 14.9 | <1ms | Yes |
+| Lunar Lake | iGPU (Xe2-LPG) | Xe2 | ~136 GB/s | 14.9 | —‡ | Yes |
 | Panther Lake (DDR5-5600) | iGPU (Xe3-LPG) | Xe3 | ~90 GB/s | **18.7** | **65ms** | **Yes (excellent)** |
-| Panther Lake (DDR5-7200) | iGPU (Xe3-LPG) | Xe3 | ~115 GB/s | 16.4† | — | Yes |
+| Panther Lake (DDR5-7200) | iGPU (Xe3-LPG) | Xe3 | ~115 GB/s | **22.8** | **55ms** | **Yes (excellent)** |
 | Arc A770M | dGPU (Xe-HPG) | Xe-HPG | ~512 GB/s | **52.2** | **42ms** | Yes (5× target) |
 
-*† DDR5-7200 config used unoptimized Llama AWQ + optimum-intel baseline only; applying the same optimizations that produced 18.7 TPS on DDR5-5600 would yield ~21-22 TPS based on the measured 0.82 bandwidth elasticity coefficient.*
+*‡ Lunar Lake was tested with the optimum-intel backend only, which does not reliably capture TTFT (reports <1ms due to Python streamer callback limitations). Real TTFT requires the GenAI C++ backend, which was not tested on this platform. Based on PTL results, expected TTFT is ~70-90ms for INT4.*
 
-Several findings reshape the narrative from the original hypothesis paper:
+Several findings reshape the initial assumptions about edge LLM viability:
 
 ### 2.1 The FP16 Ceiling: Quantization Is Not Optional
 
@@ -94,7 +94,7 @@ Lunar Lake (8 Xe2 cores with 64 XMX engines) delivers **14.9 TPS** at INT4. Mete
 
 ### 2.4 The dGPU Story: Premium Tier, Not Stopgap
 
-The original paper framed discrete GPUs as a stopgap while iGPU performance caught up. Our data reframes this: with iGPU at 18.7 TPS (excellent for single-session kiosk), the dGPU at 52.2 TPS is the **premium tier** — enabling multi-session serving, sub-second response completion, or concurrent multimodal workloads. The Arc A770M delivers a 50-token response in under 1 second with 42ms time-to-first-token. This is the multi-user or real-time tier, not a fallback.
+Early planning discussions framed discrete GPUs as a stopgap while iGPU performance caught up. Our data tells a different story: with iGPU at 18.7 TPS (excellent for single-session kiosk), the dGPU at 52.2 TPS is the **premium tier** — enabling multi-session serving, sub-second response completion, or concurrent multimodal workloads. The Arc A770M delivers a 50-token response in under 1 second with 42ms time-to-first-token. This is the multi-user or real-time tier, not a fallback.
 
 ---
 
@@ -136,7 +136,7 @@ Our hypothesis comes with an important caveat: **memory throughput is the bindin
 
 ### 3.5 Software Optimization: The Highest-ROI Investment
 
-The original paper mentioned software maturity as a contributing factor. Our optimization experiments reveal it is the **dominant** factor — and one that amplifies on faster hardware.
+Software maturity is often cited as a contributing factor to edge AI performance. Our optimization experiments reveal it is the **dominant** factor — and one that amplifies on faster hardware.
 
 **Table 3: Software Optimization Impact by Platform**
 
@@ -157,7 +157,7 @@ Recent research shows that we can treat long prompts as an *external environment
 
 ## 4. Hypothesis Validated: The Compounding Effect
 
-The original paper presented the compounding effect as a theoretical framework. Our benchmarking campaign now provides **empirical proof** of each factor and their multiplicative interaction.
+The compounding effect is not just a theoretical framework — our benchmarking campaign provides **empirical proof** of each factor and their multiplicative interaction.
 
 Three effects compound:
 
@@ -261,7 +261,7 @@ Tasks requiring extended reasoning chains or multi-step planning. Open-ended cre
 
 ## 6. Implications for 2026-2027 Hardware Planning
 
-The original paper offered projections. We now have data.
+This section moves beyond projections to data-driven recommendations.
 
 ### 6.1 Hardware Planning Decision Tree
 
@@ -270,16 +270,14 @@ The original paper offered projections. We now have data.
 | Tier | Hardware | Best INT4 TPS | TTFT | 50-Token Response | Recommendation |
 |------|----------|--------------|------|-------------------|----------------|
 | Not recommended | Meteor Lake iGPU | 6.7 | — | ~7.5s | Below 10 TPS threshold; no XMX engines |
-| Budget | Lunar Lake iGPU | ~15 | <1ms | ~3.3s | Viable for basic single-session kiosk |
+| Budget | Lunar Lake iGPU | ~15 | —‡ | ~3.3s | Viable for basic single-session kiosk |
 | **Standard** | **PTL iGPU (DDR5-5600+)** | **18-19** | **65ms** | **2.7s** | **Recommended for production kiosk** |
-| Standard+ | PTL iGPU (DDR5-7200) | ~21-22* | — | ~2.3s* | Higher throughput where budget allows |
+| **Standard+** | **PTL iGPU (DDR5-7200)** | **22-23** | **55ms** | **2.2s** | **Best iGPU configuration tested** |
 | Premium | Arc A770M dGPU | 50-52 | 42ms | **<1s** | Multi-session, sub-second response |
-
-*\* Projected from measured 0.82 bandwidth elasticity applied to optimized configuration.*
 
 ### 6.2 PTL: From "Barely Enough" to Production-Ready
 
-The original paper described PTL as "hovering near 10 TPS with tweaks." The measured reality:
+Early internal projections described PTL as "hovering near 10 TPS with tweaks." The measured reality:
 
 - **Unoptimized FP16:** 5.1 TPS (worse than projected)
 - **Optimized INT4:** 18.7 TPS (87% above the 10 TPS target)
@@ -289,18 +287,22 @@ PTL is not "barely enough" — it is **production-ready with substantial margin.
 
 ### 6.3 Nova Lake Projection
 
-Using the measured bandwidth elasticity coefficient (0.82) and the optimization amplification finding (gains scale with hardware speed), we can project Nova Lake iGPU performance:
+Using the measured bandwidth elasticity coefficient (0.82) and the optimization amplification finding (gains scale with hardware speed), we can project Nova Lake iGPU performance. Our DDR5-7200 benchmark results provide a direct validation checkpoint: we predicted 21-22 TPS and measured **22.8 TPS** — confirming the elasticity model slightly *underestimates* actual gains on this architecture.
 
-**Conservative estimate (bandwidth scaling only):**
-Nova Lake with LPDDR5X-8533 (~137 GB/s, similar to Lunar Lake) on Xe3+ architecture with more cores:
-- Baseline improvement from architecture: ~20-30% over PTL DDR5-5600 (based on core count and bandwidth increase)
-- Applied to optimized configuration: 18.7 × 1.25 = **~23-24 TPS**
+**Mainstream Nova Lake (dual-channel LPDDR5X-9600, ~154 GB/s):**
+Based on industry roadmaps, mainstream mobile Nova Lake is expected to retain dual-channel LPDDR5X with higher speed grades (~9600 MT/s), yielding ~154 GB/s peak bandwidth — a 71% increase over PTL DDR5-5600 (~90 GB/s).
 
-**Optimistic estimate (bandwidth + optimization amplification):**
-Software optimizations deliver larger gains on faster hardware (Section 4.3). If Nova Lake's higher baseline amplifies software gains:
-- **25-30 TPS** INT4 on Nova Lake iGPU
+Applying the validated elasticity model:
+- Bandwidth scaling: (154 / 90) × 0.82 = 1.40× throughput multiplier
+- Applied to optimized configuration: 18.7 × 1.40 = **~26 TPS**
+- With additional Xe3+ core count improvements: **27-30 TPS**
 
-Either estimate places Nova Lake well into the "more than enough" territory for single-session kiosk — opening the door to multi-session serving or concurrent multimodal workloads (vision + voice + LLM).
+This estimate is conservative — our DDR5-7200 validation showed the model underestimates by ~4-8%, and Nova Lake's additional compute cores will provide further headroom beyond pure bandwidth scaling.
+
+**Nova Lake AX variant (quad-channel LPDDR5X-9600, ~307 GB/s — rumored):**
+Leaked specifications suggest a high-end "AX" variant with a 256-bit LPDDR5X bus (effectively quad-channel), targeting workstation-class mobile applications. At ~307 GB/s — comparable to the Arc A770M's dedicated GDDR6 — this configuration could theoretically approach **40-45 TPS on iGPU**, blurring the line between integrated and discrete GPU performance. This variant, if produced, would be positioned against AMD's Strix Halo rather than mainstream client, and should be considered a premium option rather than the deployment baseline.
+
+Either estimate places mainstream Nova Lake well into the "more than enough" territory for single-session kiosk — opening the door to multi-session serving or concurrent multimodal workloads (vision + voice + LLM).
 
 ### 6.4 Reframing the dGPU
 
@@ -310,7 +312,7 @@ The dGPU is not a stopgap for inadequate iGPU performance — it is the **premiu
 - **Sub-second response:** A 50-token response completes in under 1 second — enabling conversational flows that feel truly real-time
 - **Multimodal headroom:** The 16GB dedicated GDDR6 can host the LLM alongside vision or audio models without memory contention
 
-For single-session deployments, the iGPU at 18.7 TPS is the right answer. The dGPU is for when you need more.
+For single-session deployments, the iGPU at 18.7-22.8 TPS (depending on memory speed) is the right answer. The dGPU is for when you need more.
 
 ### 6.5 Longevity and ROI
 
@@ -324,15 +326,15 @@ The hardware ceiling is rising faster than current workload demands. The focus s
 
 Our analysis validates the hypothesis that tomorrow's edge LLMs will outgrow today's constraints — and provides the first-party data to prove it. In concrete terms:
 
-**1. Hypothesis validated: 3.7× gain, zero hardware changes, zero quality loss.** Panther Lake went from 5.1 TPS (Llama FP16, unoptimized) to 18.7 TPS (Qwen INT4, GenAI) through four independent, additive software optimizations. On discrete GPU, the same approach reached 52.2 TPS with 42ms time-to-first-token.
+**1. Hypothesis validated: 3.7-4.5× gain, zero hardware changes, zero quality loss.** Panther Lake went from 5.1 TPS (Llama FP16, unoptimized) to 18.7 TPS on DDR5-5600 and **22.8 TPS on DDR5-7200** (Qwen INT4, GenAI) through four independent, additive software optimizations. On discrete GPU, the same approach reached 52.2 TPS with 42ms time-to-first-token.
 
-**2. iGPU is production-ready.** At 18.7 TPS and 65ms TTFT, the PTL iGPU exceeds the 10 TPS kiosk target by 87%. A 50-token response takes 2.7 seconds with perceived-instant first token. The discrete GPU is a premium tier for multi-session or sub-second use cases, not a required stopgap.
+**2. iGPU is production-ready.** At 18.7-22.8 TPS and 55-65ms TTFT (depending on memory speed), the PTL iGPU exceeds the 10 TPS kiosk target by 87-128%. A 50-token response takes 2.2-2.7 seconds with perceived-instant first token. The discrete GPU is a premium tier for multi-session or sub-second use cases, not a required stopgap.
 
 **3. Software optimization is the highest-ROI investment.** The combined +267% gain required no hardware changes, no additional cost, and no quality tradeoff. Every optimization we tested delivers larger gains on faster hardware — meaning the ROI of software optimization *increases* with each hardware generation.
 
 **4. Quality is not the gating factor.** Across 7 kiosk scenarios, 2 models, and 3 precision levels, INT4 quality is indistinguishable from FP16. The quality-speed tradeoff is a false dilemma for bounded tasks. RAG — not precision — is the real quality bottleneck: both models hallucinate product names and policies without retrieval grounding.
 
-**5. The edge LLM cost curve is steepening.** Model quality at fixed parameter counts continues to improve (Densing Law). Quantization robustness continues to improve. Software stacks continue to mature. These gains compound — and our optimization amplification finding shows they compound *faster* on better hardware. Nova Lake iGPU should reach 25-30 TPS INT4, making the kiosk target trivial and opening headroom for multi-session serving or enhanced features.
+**5. The edge LLM cost curve is steepening.** Model quality at fixed parameter counts continues to improve (Densing Law). Quantization robustness continues to improve. Software stacks continue to mature. These gains compound — and our optimization amplification finding shows they compound *faster* on better hardware. Our DDR5-7200 results (22.8 TPS) validated the bandwidth elasticity model, which projects mainstream Nova Lake iGPU at **27-30 TPS** INT4 — making the kiosk target trivial and opening headroom for multi-session serving or enhanced features.
 
 For retail, banking, and other verticals planning edge AI rollouts, the message is clear: devices deployed today will handle more with time, not less. The "barely enough" hardware of early 2026 is already more than enough after six months of software optimization. Edge AI architects should shift emphasis from hardware-oriented optimization to embracing model compression, runtime selection, and efficiency techniques — ensuring edge AI solutions become cheaper, more efficient, and easier to deploy at scale each year.
 
@@ -465,8 +467,9 @@ Cork, J. "Semantic Quality Comparison: Quantization and Model Selection for Kios
 | Arc A770M (dGPU) | INT4 GPTQ | Llama 3.1-8B | GenAI | **50.3** | **54** | [Optimization](optimization-whitepaper.md) §6.2 |
 | PTL DDR5-5600 (iGPU) | INT4 AWQ | Qwen 2.5-7B | GenAI | **18.7** | **65** | [Optimization](optimization-whitepaper.md) §6.1 |
 | PTL DDR5-5600 (iGPU) | INT4 GPTQ | Llama 3.1-8B | GenAI | **17.6** | **77** | [Optimization](optimization-whitepaper.md) §6.1 |
-| PTL DDR5-7200 (iGPU) | INT4 AWQ | Llama 3.1-8B | optimum | **16.4** | — | [Benchmarking](whitepaper.md) §7 |
-| Lunar Lake (iGPU) | INT4 AWQ | Llama 3.1-8B | optimum | **14.9** | <1 | [Benchmarking](whitepaper.md) §7 |
+| PTL DDR5-7200 (iGPU) | INT4 AWQ | Qwen 2.5-7B | GenAI | **22.8** | **55** | This paper — DDR5-7200 validation run |
+| PTL DDR5-7200 (iGPU) | INT4 GPTQ | Llama 3.1-8B | GenAI | **21.5** | **67** | This paper — DDR5-7200 validation run |
+| Lunar Lake (iGPU) | INT4 AWQ | Llama 3.1-8B | optimum | **14.9** | —‡ | [Benchmarking](whitepaper.md) §7 |
 | Meteor Lake (iGPU) | INT4 AWQ | Llama 3.1-8B | optimum | **6.7** | — | [Benchmarking](whitepaper.md) §7 |
 
 ### Table B-2: Optimization Impact Summary
