@@ -63,12 +63,10 @@ Our benchmarking campaign covered five Intel platforms spanning three GPU archit
 | Platform | GPU Type | Architecture | Memory BW | Best Config TPS | TTFT | Kiosk-Viable? |
 |----------|----------|-------------|-----------|----------------|------|---------------|
 | Meteor Lake | iGPU (Xe-LPG, no XMX) | Xe | ~90 GB/s | 6.7 | — | No (marginal) |
-| Lunar Lake | iGPU (Xe2-LPG) | Xe2 | ~136 GB/s | 14.9 | —‡ | Yes |
+| Lunar Lake | iGPU (Xe2-LPG) | Xe2 | ~136 GB/s | **22.8** | **60ms** | **Yes (excellent)** |
 | Panther Lake (DDR5-5600) | iGPU (Xe3-LPG) | Xe3 | ~90 GB/s | **18.7** | **65ms** | **Yes (excellent)** |
 | Panther Lake (DDR5-7200) | iGPU (Xe3-LPG) | Xe3 | ~115 GB/s | **22.8** | **55ms** | **Yes (excellent)** |
 | Arc A770M | dGPU (Xe-HPG) | Xe-HPG | ~512 GB/s | **52.2** | **42ms** | Yes (5× target) |
-
-*‡ Lunar Lake was tested with the optimum-intel backend only, which does not reliably capture TTFT (reports <1ms due to Python streamer callback limitations). Real TTFT requires the GenAI C++ backend, which was not tested on this platform. Based on PTL results, expected TTFT is ~70-90ms for INT4.*
 
 Several findings reshape the initial assumptions about edge LLM viability:
 
@@ -270,7 +268,7 @@ This section moves beyond projections to data-driven recommendations.
 | Tier | Hardware | Best INT4 TPS | TTFT | 50-Token Response | Recommendation |
 |------|----------|--------------|------|-------------------|----------------|
 | Not recommended | Meteor Lake iGPU | 6.7 | — | ~7.5s | Below 10 TPS threshold; no XMX engines |
-| Budget | Lunar Lake iGPU | ~15 | —‡ | ~3.3s | Viable for basic single-session kiosk |
+| Standard | Lunar Lake iGPU | **~23** | **60ms** | **2.2s** | Excellent — on-package LPDDR5X advantage |
 | **Standard** | **PTL iGPU (DDR5-5600+)** | **18-19** | **65ms** | **2.7s** | **Recommended for production kiosk** |
 | **Standard+** | **PTL iGPU (DDR5-7200)** | **22-23** | **55ms** | **2.2s** | **Best iGPU configuration tested** |
 | Premium | Arc A770M dGPU | 50-52 | 42ms | **<1s** | Multi-session, sub-second response |
@@ -469,7 +467,7 @@ Cork, J. "Semantic Quality Comparison: Quantization and Model Selection for Kios
 | PTL DDR5-5600 (iGPU) | INT4 GPTQ | Llama 3.1-8B | GenAI | **17.6** | **77** | [Optimization](optimization-whitepaper.md) §6.1 |
 | PTL DDR5-7200 (iGPU) | INT4 AWQ | Qwen 2.5-7B | GenAI | **22.8** | **55** | This paper — DDR5-7200 validation run |
 | PTL DDR5-7200 (iGPU) | INT4 GPTQ | Llama 3.1-8B | GenAI | **21.5** | **67** | This paper — DDR5-7200 validation run |
-| Lunar Lake (iGPU) | INT4 AWQ | Llama 3.1-8B | optimum | **14.9** | —‡ | [Benchmarking](whitepaper.md) §7 |
+| Lunar Lake (iGPU) | INT4 AWQ | Qwen 2.5-7B | GenAI | **22.8** | **60** | This paper — GenAI validation run |
 | Meteor Lake (iGPU) | INT4 AWQ | Llama 3.1-8B | optimum | **6.7** | — | [Benchmarking](whitepaper.md) §7 |
 
 ### Table B-2: Optimization Impact Summary
