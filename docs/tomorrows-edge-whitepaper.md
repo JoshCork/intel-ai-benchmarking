@@ -247,7 +247,7 @@ This hypothesis is not universal. It holds under specific conditions that must b
 
 **Memory bandwidth must be sufficient.** Our measurements quantify this precisely: the 0.82 elasticity coefficient means a 10% bandwidth shortfall costs ~8% throughput. DDR5-5600 delivers 18.7 TPS; DDR5-7200 would yield ~22 TPS on the same silicon. System designers must account for this — a DDR5-4800 configuration would likely fall below the kiosk target even with all software optimizations applied.
 
-**Memory capacity matters for model selection.** The DDR5-7200 configuration (16GB) could not load FP16 models (15GB + overhead). Production systems must size memory for their target precision and model, with headroom for the OS and other workloads.
+**Memory capacity matters for model selection — and the market is making it worse.** The DDR5-7200 configuration (16GB) could not load FP16 models (15GB + overhead). Even if higher-capacity DDR5-7200 SODIMMs existed, they would face a brutal market reality: DDR5 DRAM prices have surged approximately 307% since September 2025, with severe shortages projected through Q4 2027. More critically, DDR5-7200 SODIMMs do not exist in retail channels — that speed grade is only available as LPDDR5X soldered on-package (as in Lunar Lake). The combination of physical unavailability and skyrocketing prices means brute-forcing FP16 with faster, larger memory is not a viable deployment strategy. Production systems must size memory for their target precision and model, with headroom for the OS and other workloads — and current market conditions make INT4 quantization not just technically preferable but economically necessary.
 
 ### Where the Hypothesis Does Not Apply
 
@@ -317,6 +317,16 @@ For single-session deployments, the iGPU at 18.7-22.8 TPS (depending on memory s
 For customers, investing in an edge AI system today is not a dead-end. The 3.7× gain we measured on PTL came entirely from software improvements released during the hardware's first year. This counters the usual trend where software grows more demanding on old hardware. Edge AI solutions are future-proof if scope is managed — plan capacity with the expectation of continued gains.
 
 The hardware ceiling is rising faster than current workload demands. The focus shifts from "Can we run this at all?" to "What else can we do, now that we can run this easily?"
+
+### 6.6 Memory Economics: Why Quantization Is the Only Viable Path
+
+The DDR5 memory market has fundamentally shifted the cost calculus for edge AI deployments. DRAM prices have surged roughly 307% since September 2025, driven by AI datacenter demand consuming global supply. Industry analysts project severe shortages persisting through Q4 2027 — meaning this is not a temporary spike but a structural market condition that will span the entire planning horizon for hardware being specified today.
+
+This has concrete implications for BOM cost. An FP16 8B-parameter model requires ~15GB of weight storage plus runtime overhead, effectively mandating 64GB system memory for production stability. At current pricing, a 64GB DDR5-5600 kit represents a significant and rising fraction of total system BOM. Worse, DDR5-7200 SODIMMs — the speed grade that delivered our best iGPU throughput — simply do not exist as retail components. That speed tier is exclusively available as LPDDR5X soldered on-package, meaning it cannot be specified as a field upgrade or aftermarket option.
+
+INT4 quantization changes this equation entirely. By reducing model memory footprint by 4×, a system can run comfortably in 16GB — the same capacity as our DDR5-7200 test configuration that delivered 22.8 TPS. The memory cost savings alone may exceed the entire software optimization investment, and the smaller footprint opens the door to on-package LPDDR5X configurations that are both faster and more power-efficient.
+
+The market reinforces this paper's central thesis from an unexpected direction: software optimization (quantization, runtime selection, model architecture) is not merely higher-ROI than hardware brute-force — it is increasingly the *only* viable path. Even organizations willing to pay a premium for FP16 headroom will find the memory physically unavailable at the speeds and capacities required. Quantization is no longer a performance optimization; it is a supply chain strategy.
 
 ---
 
