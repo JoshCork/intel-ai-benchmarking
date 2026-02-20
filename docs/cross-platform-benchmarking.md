@@ -84,9 +84,9 @@ Panther Lake achieves the highest memory bandwidth efficiency (68-71% baseline, 
 
 This paper is part of a three-paper series. The main results and cross-platform analysis are presented here; two companion papers provide deep dives into specific topics:
 
-- **`optimization-whitepaper.md`** — *GPU Runtime Optimization for Intel Xe3 iGPU LLM Inference*. Detailed experimental results for three optimization strategies on Panther Lake: `ov_config` runtime flags (no benefit), GPTQ quantization (+20.7%), and the OpenVINO GenAI C++ pipeline (+8.9%). Includes Qwen vs Llama model architecture comparison and reproduction commands for all experiments.
+- **`runtime-optimization.md`** — *GPU Runtime Optimization for Intel Xe3 iGPU LLM Inference*. Detailed experimental results for three optimization strategies on Panther Lake: `ov_config` runtime flags (no benefit), GPTQ quantization (+20.7%), and the OpenVINO GenAI C++ pipeline (+8.9%). Includes Qwen vs Llama model architecture comparison and reproduction commands for all experiments.
 
-- **`quality-comparison-whitepaper.md`** — *LLM Output Quality Comparison: Qwen2.5-7B vs Llama 3.1-8B on Intel Xe3*. Semantic quality analysis of actual generated responses across both models, all precision levels (FP16/INT8/INT4), and GPTQ variants. Includes full response transcripts, per-scenario head-to-head scoring, and the finding that INT4 quality equals FP16 for kiosk use cases.
+- **`semantic-quality-comparison.md`** — *LLM Output Quality Comparison: Qwen2.5-7B vs Llama 3.1-8B on Intel Xe3*. Semantic quality analysis of actual generated responses across both models, all precision levels (FP16/INT8/INT4), and GPTQ variants. Includes full response transcripts, per-scenario head-to-head scoring, and the finding that INT4 quality equals FP16 for kiosk use cases.
 
 ---
 
@@ -1016,7 +1016,7 @@ After establishing baseline Llama 3.1-8B results across all platforms, we benchm
 
 ## 9. Optimization Experiments on Panther Lake
 
-Building on baseline results, we tested three independent optimization strategies on PTL-FAIRCHILD (DDR5-5600). Full experimental details are in the companion paper (`optimization-whitepaper.md`).
+Building on baseline results, we tested three independent optimization strategies on PTL-FAIRCHILD (DDR5-5600). Full experimental details are in the companion paper (`runtime-optimization.md`).
 
 ### 9.1 Experiment 1: `ov_config` Runtime Flags — No Benefit
 
@@ -1102,13 +1102,13 @@ The C++ pipeline eliminates Python overhead in the token generation loop. **The 
 
 The GPTQ and GenAI optimizations are fully additive on both platforms. On the iGPU, combined software optimizations deliver **+30-39%**. On the dGPU, the gains are even larger: **+62-68%** — because the higher-bandwidth A770M can better exploit GPTQ's improved weight layout and the faster token rate makes Python overhead elimination more impactful. The dGPU's best configuration (**Qwen INT4 GenAI = 52.2 TPS**) is 2.8x faster than the iGPU's best (**18.7 TPS**).
 
-> See `optimization-whitepaper.md` for full experimental details, reproduction commands, and analysis.
+> See `runtime-optimization.md` for full experimental details, reproduction commands, and analysis.
 
 ---
 
 ## 10. Quality Analysis
 
-We conducted a semantic quality comparison of Qwen2.5-7B-Instruct and Llama 3.1-8B-Instruct across all 7 kiosk scenarios at FP16, INT8, and INT4 precisions, including GPTQ variants. Full analysis is in the companion paper (`quality-comparison-whitepaper.md`).
+We conducted a semantic quality comparison of Qwen2.5-7B-Instruct and Llama 3.1-8B-Instruct across all 7 kiosk scenarios at FP16, INT8, and INT4 precisions, including GPTQ variants. Full analysis is in the companion paper (`semantic-quality-comparison.md`).
 
 ### 10.1 Quantization Impact on Quality
 
@@ -1144,7 +1144,7 @@ Using the fastest configuration for each model: Qwen INT4 AWQ GenAI (18.7 TPS) v
 
 3. **No reason to run FP16 or INT8**: INT4 is strictly better — faster speed, equal quality. There is no quality-speed tradeoff to make at kiosk-level task complexity.
 
-> See `quality-comparison-whitepaper.md` for full response transcripts, per-scenario analysis, and detailed comparison.
+> See `semantic-quality-comparison.md` for full response transcripts, per-scenario analysis, and detailed comparison.
 
 ---
 
@@ -1280,7 +1280,7 @@ On the Arc A770M, the GPU generates tokens fast enough that the sampling overhea
 
 **Sampling**: Temperature=0.7 produces more varied and often slightly more engaging responses (e.g., "Welcome to our store!" vs "Welcome to our store.") with additional detail in product listings. The quality floor remains high across all three precisions.
 
-**Key observation**: Neither INT8 nor INT4 quantization causes perceptible quality degradation for conversational kiosk tasks. The NNCF calibration (AWQ for INT4, per-channel asymmetric for INT8) effectively preserves model quality while delivering substantial throughput gains. A comprehensive semantic quality analysis across both models and all precisions — including GPTQ variants — is presented in Section 10 and detailed in `quality-comparison-whitepaper.md`.
+**Key observation**: Neither INT8 nor INT4 quantization causes perceptible quality degradation for conversational kiosk tasks. The NNCF calibration (AWQ for INT4, per-channel asymmetric for INT8) effectively preserves model quality while delivering substantial throughput gains. A comprehensive semantic quality analysis across both models and all precisions — including GPTQ variants — is presented in Section 10 and detailed in `semantic-quality-comparison.md`.
 
 ### 11.5 TTFT Performance
 
