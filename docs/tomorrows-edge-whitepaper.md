@@ -295,7 +295,21 @@ Early internal projections described PTL as "hovering near 10 TPS with tweaks." 
 - **Optimized INT4:** 18.7 TPS (87% above the 10 TPS target)
 - **Path to get there:** Zero hardware changes, zero quality loss
 
-PTL is not "barely enough" — it is **production-ready with substantial margin.** To put this in human terms: a typical 50-token response contains approximately 38 English words — roughly 2-3 complete sentences. At 18.7 TPS, the system generates this response in **2.7 seconds** with a 65ms perceived-instant first token. For context, the average English speaker talks at ~150 words per minute, meaning it would take about 15 seconds to *speak* those 38 words aloud. The system generates text **5.5× faster than conversational speaking speed** — and in a streaming voice pipeline, this headroom ensures the spoken response sounds natural with no mid-sentence pauses. (For detailed analysis of speech cadence requirements and multi-language TPS implications, see [VEI Voice Pipeline Architecture](https://github.com/intel-retail/retail-use-cases/issues/85).) For a retail kiosk or banking ATM, this is excellent user experience.
+PTL is not "barely enough" — it is **production-ready with substantial margin.** To put this in human terms: a typical 50-token response contains approximately 38 English words — roughly 2-3 complete sentences. At 18.7 TPS, the system generates this response in **2.7 seconds** with a 65ms perceived-instant first token.
+
+How much headroom this provides depends on the interaction modality:
+
+| Modality | Human Consumption Speed | Time to Consume 38 Words | System Headroom at 18.7 TPS |
+|----------|------------------------|--------------------------|----------------------------|
+| Voice-to-voice (TTS streaming) | ~150 WPM (speaking) | ~15 seconds | 5.5× faster than needed |
+| On-screen text (reading) | ~250 WPM (average reader) | ~9 seconds | 3.3× faster than needed |
+| Scanning / power reader | ~400 WPM | ~6 seconds | 2.2× faster than needed |
+
+The voice-to-voice case is the harder bar. In a streaming voice pipeline, the TTS engine converts LLM tokens to audio in real-time — if the LLM generates tokens slower than the TTS consumes them, the spoken response will stall mid-sentence. At 18.7 TPS, the system generates text 5.5× faster than conversational speaking speed, ensuring natural-sounding output with no mid-sentence pauses. The on-screen case is more forgiving: users see words appearing progressively and tolerate small buffering delays more readily than audio gaps. Either way, 18.7 TPS produces text faster than humans can consume it in any modality.
+
+(For detailed analysis of speech cadence requirements, minimum TPS floors by language, and multi-language implications, see [VEI Voice Pipeline Architecture](https://github.com/intel-retail/retail-use-cases/issues/85).)
+
+For a retail kiosk or banking ATM, this is excellent user experience regardless of whether the customer is reading on screen or listening to a voice response.
 
 ### 6.3 Nova Lake Projection
 
