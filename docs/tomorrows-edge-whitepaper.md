@@ -412,7 +412,7 @@ Full methodology details are available in [Cross-Platform Benchmarking](https://
 | MTL-NOYCE | Core Ultra 5 125H | Arc | iGPU (Xe, no XMX) | 62 GB DDR5-5600 |
 | PTL-FAIRCHILD | Core Ultra (PTL-H) | Arc | iGPU (Xe3) | 16GB DDR5-7200 / 64GB DDR5-5600 |
 
-All benchmark code, scenarios, and configurations are open source: [github.com/JoshCork/intel-ai-benchmarking](https://github.com/JoshCork/intel-ai-benchmarking)
+All benchmark code, scenarios, and configurations are available internally upon request.
 
 ---
 
