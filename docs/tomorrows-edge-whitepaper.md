@@ -18,7 +18,7 @@ Intel Retail Edge AI (ECG) — February 2026
 
 Over the past several months, our Retail AI Suite team has validated LLM-based conversational and multimodal pipelines on Intel's latest client platforms: Meteor Lake (MTL), Lunar Lake (LNL), and now Panther Lake (PTL). These experiments were driven by real customer workloads — notably NCR's banking ATM avatar, which requires **10 tokens per second (TPS)** throughput from ~8B-parameter models under strict latency constraints.
 
-Initial PTL benchmarks delivered **5.1 TPS using FP16 precision** — barely half the 10 TPS target (see [Cross-Platform Benchmarking Whitepaper](cross-platform-benchmarking.md), Section 7). This gap prompted stopgap proposals such as adding discrete Intel Arc GPUs. However, our working hypothesis was that this gap would close naturally through software and algorithmic improvements alone.
+Initial PTL benchmarks delivered **5.1 TPS using FP16 precision** — barely half the 10 TPS target (see [Cross-Platform Benchmarking Whitepaper](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQD8Hi3WlhRrSJMRYevpwEBwAaCw4KARI1IXpE9LisgscBo?e=lSQRTa), Section 7). This gap prompted stopgap proposals such as adding discrete Intel Arc GPUs. However, our working hypothesis was that this gap would close naturally through software and algorithmic improvements alone.
 
 The gap didn't just close — it reversed. Through a systematic series of optimizations, each building on the last, we pushed PTL from 5.1 to **18.7 TPS** — exceeding the target by 87%:
 
@@ -40,15 +40,15 @@ Each step is a different optimization lever. Each is independently validated. An
 
 This paper presents the strategic case for why these results were predictable and what they imply for hardware planning. The three companion papers provide full methodology and results:
 
-- **[Cross-Platform Benchmarking](cross-platform-benchmarking.md)** — 5 platforms, 2 models, 3 precisions, full results
-- **[Runtime Optimization Experiments](runtime-optimization.md)** — ov_config, GPTQ, GenAI pipeline analysis
-- **[Semantic Quality Comparison](semantic-quality-comparison.md)** — 7 scenarios, 2 models, 3 precisions, response-level analysis
+- **[Cross-Platform Benchmarking](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQD8Hi3WlhRrSJMRYevpwEBwAaCw4KARI1IXpE9LisgscBo?e=lSQRTa)** — 5 platforms, 2 models, 3 precisions, full results
+- **[Runtime Optimization Experiments](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQBpnmlhoiYcQby_c5LGJIWQAZLvQV7TjKeH25J8O1JQUTY?e=0gZx6E)** — ov_config, GPTQ, GenAI pipeline analysis
+- **[Semantic Quality Comparison](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQA-LUUweUBoTrERqU-m03nQAQICzMWRUe9ojeI1Fbb9sBM?e=6zOEuk)** — 7 scenarios, 2 models, 3 precisions, response-level analysis
 
 The central hypothesis remains: ***the minimum hardware required to run a high-quality, low-latency conversational agent at the edge is decreasing over time.*** Three factors drive this:
 
 > **(a)** Model quality is improving at fixed parameter counts — the "Densing Law" documents capability density doubling approximately every 3.5 months (Sun et al., 2025).
 >
-> **(b)** Quantization techniques are becoming near-lossless — our own testing confirms INT4 is indistinguishable from FP16 for kiosk conversations across all seven test scenarios (see [Quality Comparison](semantic-quality-comparison.md)).
+> **(b)** Quantization techniques are becoming near-lossless — our own testing confirms INT4 is indistinguishable from FP16 for kiosk conversations across all seven test scenarios (see [Quality Comparison](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQA-LUUweUBoTrERqU-m03nQAQICzMWRUe9ojeI1Fbb9sBM?e=6zOEuk)).
 >
 > **(c)** Software stacks continue unlocking performance on existing silicon — the GenAI C++ pipeline alone delivers +9-16% on the same hardware and model.
 
@@ -120,7 +120,7 @@ Open-source communities have achieved dramatic quality uplifts at fixed paramete
 
 ![Model Quality Improvements](charts/figure2-model-quality.png)
 
-> **First-party validation:** Our benchmarks directly confirm this trend. Qwen 2.5-7B-Instruct (released late 2024, ~6.5B non-embedding parameters) outperforms Llama 3.1-8B-Instruct (released mid-2024, 8.0B parameters) on our kiosk scenarios — winning 3 of 7 head-to-head comparisons with 2 ties — despite having **19% fewer parameters**. On throughput, Qwen's architectural advantages (grouped-query attention with 7:1 head ratio, smaller KV cache) translate to **+27% higher TPS on iGPU and +45% on dGPU** at INT4. The Densing Law is not just a trend line; it is measurable in our own data. See [Quality Comparison](semantic-quality-comparison.md), Section 5 for the full head-to-head analysis.
+> **First-party validation:** Our benchmarks directly confirm this trend. Qwen 2.5-7B-Instruct (released late 2024, ~6.5B non-embedding parameters) outperforms Llama 3.1-8B-Instruct (released mid-2024, 8.0B parameters) on our kiosk scenarios — winning 3 of 7 head-to-head comparisons with 2 ties — despite having **19% fewer parameters**. On throughput, Qwen's architectural advantages (grouped-query attention with 7:1 head ratio, smaller KV cache) translate to **+27% higher TPS on iGPU and +45% on dGPU** at INT4. The Densing Law is not just a trend line; it is measurable in our own data. See [Quality Comparison](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQA-LUUweUBoTrERqU-m03nQAQICzMWRUe9ojeI1Fbb9sBM?e=6zOEuk), Section 5 for the full head-to-head analysis.
 
 ### 3.2 Quantization Robustness Is Rapidly Improving
 
@@ -136,19 +136,19 @@ Red Hat's comprehensive study of over 500,000 evaluations on the Llama-3.1 famil
 
 ![Quality Surface](charts/figure4-quality-surface.png)
 
-> **First-party validation:** Our semantic quality analysis goes beyond aggregate benchmark scores to examine actual response quality in deployment-realistic scenarios. Across 7 kiosk conversation scenarios, 2 models, and 3 precision levels, we found: **INT4 quality is indistinguishable from FP16 quality.** Both Qwen and Llama produce equally helpful, coherent responses at INT4 as at FP16. Variations are limited to trivial word-level differences and different hallucinated product names — neither of which affects response usefulness. The quality paper's conclusion: "The quality-speed tradeoff is a false dilemma" for bounded kiosk tasks. See [Quality Comparison](semantic-quality-comparison.md), Section 6 for the full Pareto analysis.
+> **First-party validation:** Our semantic quality analysis goes beyond aggregate benchmark scores to examine actual response quality in deployment-realistic scenarios. Across 7 kiosk conversation scenarios, 2 models, and 3 precision levels, we found: **INT4 quality is indistinguishable from FP16 quality.** Both Qwen and Llama produce equally helpful, coherent responses at INT4 as at FP16. Variations are limited to trivial word-level differences and different hallucinated product names — neither of which affects response usefulness. The quality paper's conclusion: "The quality-speed tradeoff is a false dilemma" for bounded kiosk tasks. See [Quality Comparison](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQA-LUUweUBoTrERqU-m03nQAQICzMWRUe9ojeI1Fbb9sBM?e=6zOEuk), Section 6 for the full Pareto analysis.
 
 ### 3.3 Hardware Gains Outpace Workload Growth
 
 While model efficiency improves, edge hardware is also gaining AI muscle each generation. Intel's client roadmap from PTL to Nova Lake (NVL) shows significant AI accelerator upgrades. Nova Lake's integrated NPU is projected to deliver 1.6×-2× the LLM inference throughput of PTL through additional TOPS and support for FP8/BF8 precision formats.
 
-> **First-party validation:** Our controlled bandwidth experiment provides the empirical basis for hardware projections. The 0.82 elasticity coefficient — measured on identical silicon with only DRAM modules changed — means memory bandwidth improvements translate near-linearly to throughput gains. A 22% bandwidth increase (DDR5-5600 → DDR5-7200) produced an 18% throughput increase. This relationship allows us to project Nova Lake performance with confidence rather than speculation (see Section 6). Full methodology in [Cross-Platform Benchmarking](cross-platform-benchmarking.md), Section 11.9.
+> **First-party validation:** Our controlled bandwidth experiment provides the empirical basis for hardware projections. The 0.82 elasticity coefficient — measured on identical silicon with only DRAM modules changed — means memory bandwidth improvements translate near-linearly to throughput gains. A 22% bandwidth increase (DDR5-5600 → DDR5-7200) produced an 18% throughput increase. This relationship allows us to project Nova Lake performance with confidence rather than speculation (see Section 6). Full methodology in [Cross-Platform Benchmarking](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQD8Hi3WlhRrSJMRYevpwEBwAaCw4KARI1IXpE9LisgscBo?e=lSQRTa), Section 11.9.
 
 ### 3.4 The Memory Bandwidth Constraint
 
 Our hypothesis comes with an important caveat: **memory throughput is the binding constraint** once models are small enough. LLM token generation is memory-bandwidth-bound — the model must read every weight from memory for each generated token.
 
-> **First-party quantification:** We can now put precise numbers on this constraint. The bandwidth elasticity of 0.82 means a 10% bandwidth improvement yields ~8.2% throughput improvement. The FP16 ceiling at 5.1-5.5 TPS on iGPU (regardless of model or optimization) vs. 17.3-19.0 TPS on dGPU (with ~5× the bandwidth) confirms that FP16 inference is almost purely bandwidth-limited. Quantization to INT4 reduces the bandwidth requirement by ~65% (15GB → 5.2GB model), which is why INT4/FP16 speedup ratios reach 2.65× on the most bandwidth-constrained platform (PTL DDR5-5600). See [Cross-Platform Benchmarking](cross-platform-benchmarking.md), Section 11.9.
+> **First-party quantification:** We can now put precise numbers on this constraint. The bandwidth elasticity of 0.82 means a 10% bandwidth improvement yields ~8.2% throughput improvement. The FP16 ceiling at 5.1-5.5 TPS on iGPU (regardless of model or optimization) vs. 17.3-19.0 TPS on dGPU (with ~5× the bandwidth) confirms that FP16 inference is almost purely bandwidth-limited. Quantization to INT4 reduces the bandwidth requirement by ~65% (15GB → 5.2GB model), which is why INT4/FP16 speedup ratios reach 2.65× on the most bandwidth-constrained platform (PTL DDR5-5600). See [Cross-Platform Benchmarking](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQD8Hi3WlhRrSJMRYevpwEBwAaCw4KARI1IXpE9LisgscBo?e=lSQRTa), Section 11.9.
 
 ### 3.5 Software Optimization: The Highest-ROI Investment
 
@@ -163,7 +163,7 @@ Software maturity is often cited as a contributing factor to edge AI performance
 | Better model (Qwen vs Llama) | +27% | +45% | Slight improvement |
 | ov_config runtime flags | -0.7% to -7.4% | — | N/A — **do not use** |
 
-A critical finding: **optimization gains amplify on faster hardware.** The GenAI C++ pipeline delivers +16% on the dGPU vs +9% on the iGPU. GPTQ delivers +47% on the dGPU vs +21% on the iGPU. This occurs because Python overhead and suboptimal weight layouts represent a larger fraction of the per-token budget when tokens are generated faster. The implication for forward-looking hardware planning: as Intel ships faster GPUs, software optimization becomes *more* important, not less. See [Optimization Whitepaper](runtime-optimization.md), Sections 6-7 for the full analysis.
+A critical finding: **optimization gains amplify on faster hardware.** The GenAI C++ pipeline delivers +16% on the dGPU vs +9% on the iGPU. GPTQ delivers +47% on the dGPU vs +21% on the iGPU. This occurs because Python overhead and suboptimal weight layouts represent a larger fraction of the per-token budget when tokens are generated faster. The implication for forward-looking hardware planning: as Intel ships faster GPUs, software optimization becomes *more* important, not less. See [Optimization Whitepaper](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQBpnmlhoiYcQby_c5LGJIWQAZLvQV7TjKeH25J8O1JQUTY?e=0gZx6E), Sections 6-7 for the full analysis.
 
 ### 3.6 Inference-Time Algorithms
 
@@ -255,7 +255,7 @@ This hypothesis is not universal. It holds under specific conditions that must b
 
 **RAG handles knowledge; LLM handles conversation.** The "bounded domain" argument works because factual knowledge (menu items, fee structures, procedures) lives in retrieval, not the model. The LLM's job is parsing intent, generating fluent responses, and managing conversational flow.
 
-> **First-party evidence:** Our quality analysis confirms this architecture is essential. Both Qwen and Llama confidently hallucinate product names and prices when asked about inventory. Qwen invents plausible real brands ("JBL Tune 500TNC," "Anker Soundcore Liberty 2 Pro") — more dangerous than Llama's purely fictional brands ("EvoFit earbuds for $29.99") because customers might actually search for the cited products. **RAG is not an enhancement; it is a prerequisite.** See [Quality Comparison](semantic-quality-comparison.md), Section 7.2.
+> **First-party evidence:** Our quality analysis confirms this architecture is essential. Both Qwen and Llama confidently hallucinate product names and prices when asked about inventory. Qwen invents plausible real brands ("JBL Tune 500TNC," "Anker Soundcore Liberty 2 Pro") — more dangerous than Llama's purely fictional brands ("EvoFit earbuds for $29.99") because customers might actually search for the cited products. **RAG is not an enhancement; it is a prerequisite.** See [Quality Comparison](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQA-LUUweUBoTrERqU-m03nQAQICzMWRUe9ojeI1Fbb9sBM?e=6zOEuk), Section 7.2.
 
 **Edge case handling must be scoped.** The happy path (ordering a burger) is bounded. The long tail (upset customers, regional dialects, tangential questions) is not. Edge case requirements must be explicitly scoped.
 
@@ -390,7 +390,7 @@ Benchmark results throughout this paper are drawn from a systematic campaign acr
 
 Quality comparisons used greedy decoding (temp=0.0) to ensure reproducibility, with run #4 selected for response extraction after warmup stabilization. Response quality was assessed through scenario-by-scenario semantic analysis comparing response helpfulness, accuracy, and appropriateness.
 
-Full methodology details are available in [Cross-Platform Benchmarking](cross-platform-benchmarking.md), Section 6.
+Full methodology details are available in [Cross-Platform Benchmarking](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQD8Hi3WlhRrSJMRYevpwEBwAaCw4KARI1IXpE9LisgscBo?e=lSQRTa), Section 6.
 
 **Software Stack:**
 
@@ -454,11 +454,11 @@ AI ARB 2025 Deck (Intel), September 2025. Nova Lake NPU/GPU projections, INT4 co
 
 ### First-Party Benchmarking
 
-Cork, J. "Cross-Platform LLM Benchmarking on Intel Edge Hardware." February 2026. [`cross-platform-benchmarking.md`](cross-platform-benchmarking.md)
+Cork, J. "Cross-Platform LLM Benchmarking on Intel Edge Hardware." February 2026. [OneDrive](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQD8Hi3WlhRrSJMRYevpwEBwAaCw4KARI1IXpE9LisgscBo?e=lSQRTa)
 
-Cork, J. "Runtime Optimization Experiments for Edge LLM Inference." February 2026. [`runtime-optimization.md`](runtime-optimization.md)
+Cork, J. "Runtime Optimization Experiments for Edge LLM Inference." February 2026. [OneDrive](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQBpnmlhoiYcQby_c5LGJIWQAZLvQV7TjKeH25J8O1JQUTY?e=0gZx6E)
 
-Cork, J. "Semantic Quality Comparison: Quantization and Model Selection for Kiosk Deployment." February 2026. [`semantic-quality-comparison.md`](semantic-quality-comparison.md)
+Cork, J. "Semantic Quality Comparison: Quantization and Model Selection for Kiosk Deployment." February 2026. [OneDrive](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQA-LUUweUBoTrERqU-m03nQAQICzMWRUe9ojeI1Fbb9sBM?e=6zOEuk)
 
 ---
 
@@ -499,41 +499,41 @@ Cork, J. "Semantic Quality Comparison: Quantization and Model Selection for Kios
 
 | Platform | Best Config | Model | Backend | TPS | TTFT (ms) | Source |
 |----------|------------|-------|---------|-----|-----------|--------|
-| Arc A770M (dGPU) | INT4 AWQ | Qwen 2.5-7B | GenAI | **52.2** | **42** | [Optimization](runtime-optimization.md) §6.2 |
-| Arc A770M (dGPU) | INT4 GPTQ | Llama 3.1-8B | GenAI | **50.3** | **54** | [Optimization](runtime-optimization.md) §6.2 |
-| PTL DDR5-5600 (iGPU) | INT4 AWQ | Qwen 2.5-7B | GenAI | **18.7** | **65** | [Optimization](runtime-optimization.md) §6.1 |
-| PTL DDR5-5600 (iGPU) | INT4 GPTQ | Llama 3.1-8B | GenAI | **17.6** | **77** | [Optimization](runtime-optimization.md) §6.1 |
+| Arc A770M (dGPU) | INT4 AWQ | Qwen 2.5-7B | GenAI | **52.2** | **42** | [Optimization](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQBpnmlhoiYcQby_c5LGJIWQAZLvQV7TjKeH25J8O1JQUTY?e=0gZx6E) §6.2 |
+| Arc A770M (dGPU) | INT4 GPTQ | Llama 3.1-8B | GenAI | **50.3** | **54** | [Optimization](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQBpnmlhoiYcQby_c5LGJIWQAZLvQV7TjKeH25J8O1JQUTY?e=0gZx6E) §6.2 |
+| PTL DDR5-5600 (iGPU) | INT4 AWQ | Qwen 2.5-7B | GenAI | **18.7** | **65** | [Optimization](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQBpnmlhoiYcQby_c5LGJIWQAZLvQV7TjKeH25J8O1JQUTY?e=0gZx6E) §6.1 |
+| PTL DDR5-5600 (iGPU) | INT4 GPTQ | Llama 3.1-8B | GenAI | **17.6** | **77** | [Optimization](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQBpnmlhoiYcQby_c5LGJIWQAZLvQV7TjKeH25J8O1JQUTY?e=0gZx6E) §6.1 |
 | PTL DDR5-7200 (iGPU) | INT4 AWQ | Qwen 2.5-7B | GenAI | **22.8** | **55** | This paper — DDR5-7200 validation run |
 | PTL DDR5-7200 (iGPU) | INT4 GPTQ | Llama 3.1-8B | GenAI | **21.5** | **67** | This paper — DDR5-7200 validation run |
 | Lunar Lake (iGPU) | INT4 AWQ | Qwen 2.5-7B | GenAI | **22.8** | **60** | This paper — GenAI validation run |
-| Meteor Lake (iGPU) | INT4 AWQ | Llama 3.1-8B | optimum | **6.7** | — | [Benchmarking](cross-platform-benchmarking.md) §7 |
+| Meteor Lake (iGPU) | INT4 AWQ | Llama 3.1-8B | optimum | **6.7** | — | [Benchmarking](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQD8Hi3WlhRrSJMRYevpwEBwAaCw4KARI1IXpE9LisgscBo?e=lSQRTa) §7 |
 
 ### Table B-2: Optimization Impact Summary
 
 | Optimization | iGPU Gain | dGPU Gain | Quality Impact | Source |
 |-------------|-----------|-----------|----------------|--------|
-| FP16 → INT4 (AWQ) | +165% | +103% | None detected | [Benchmarking](cross-platform-benchmarking.md) §8 |
-| AWQ → GPTQ | +21% | +47% | None/positive | [Optimization](runtime-optimization.md) §4 |
-| optimum → GenAI C++ | +9% | +16% | None | [Optimization](runtime-optimization.md) §5 |
-| Llama → Qwen | +27% | +45% | Slight improvement | [Quality](semantic-quality-comparison.md) §5 |
-| ov_config flags | -0.7% to -7.4% | — | N/A | [Optimization](runtime-optimization.md) §3 |
-| DDR5-5600 → DDR5-7200 | +18% | N/A | None | [Benchmarking](cross-platform-benchmarking.md) §11.9 |
+| FP16 → INT4 (AWQ) | +165% | +103% | None detected | [Benchmarking](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQD8Hi3WlhRrSJMRYevpwEBwAaCw4KARI1IXpE9LisgscBo?e=lSQRTa) §8 |
+| AWQ → GPTQ | +21% | +47% | None/positive | [Optimization](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQBpnmlhoiYcQby_c5LGJIWQAZLvQV7TjKeH25J8O1JQUTY?e=0gZx6E) §4 |
+| optimum → GenAI C++ | +9% | +16% | None | [Optimization](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQBpnmlhoiYcQby_c5LGJIWQAZLvQV7TjKeH25J8O1JQUTY?e=0gZx6E) §5 |
+| Llama → Qwen | +27% | +45% | Slight improvement | [Quality](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQA-LUUweUBoTrERqU-m03nQAQICzMWRUe9ojeI1Fbb9sBM?e=6zOEuk) §5 |
+| ov_config flags | -0.7% to -7.4% | — | N/A | [Optimization](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQBpnmlhoiYcQby_c5LGJIWQAZLvQV7TjKeH25J8O1JQUTY?e=0gZx6E) §3 |
+| DDR5-5600 → DDR5-7200 | +18% | N/A | None | [Benchmarking](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQD8Hi3WlhRrSJMRYevpwEBwAaCw4KARI1IXpE9LisgscBo?e=lSQRTa) §11.9 |
 
 ---
 
 ## Appendix C: Companion Paper Index
 
-| Paper | File | Scope | Key Findings |
+| Paper | Link | Scope | Key Findings |
 |-------|------|-------|-------------|
-| Cross-Platform Benchmarking | [`cross-platform-benchmarking.md`](cross-platform-benchmarking.md) | 5 platforms, 2 models, 3 precisions, full methodology | Best configs, bandwidth analysis, architecture comparison |
-| Runtime Optimization | [`runtime-optimization.md`](runtime-optimization.md) | ov_config, GPTQ, GenAI pipeline on iGPU + dGPU | GenAI +9-16%, GPTQ +21-47%, gains fully additive |
-| Quality Comparison | [`semantic-quality-comparison.md`](semantic-quality-comparison.md) | 7 scenarios, 2 models, 3 precisions, semantic analysis | INT4 = FP16 for kiosk; both models hallucinate; RAG essential |
+| Cross-Platform Benchmarking | [Open in OneDrive](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQD8Hi3WlhRrSJMRYevpwEBwAaCw4KARI1IXpE9LisgscBo?e=lSQRTa) | 5 platforms, 2 models, 3 precisions, full methodology | Best configs, bandwidth analysis, architecture comparison |
+| Runtime Optimization | [Open in OneDrive](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQBpnmlhoiYcQby_c5LGJIWQAZLvQV7TjKeH25J8O1JQUTY?e=0gZx6E) | ov_config, GPTQ, GenAI pipeline on iGPU + dGPU | GenAI +9-16%, GPTQ +21-47%, gains fully additive |
+| Quality Comparison | [Open in OneDrive](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQA-LUUweUBoTrERqU-m03nQAQICzMWRUe9ojeI1Fbb9sBM?e=6zOEuk) | 7 scenarios, 2 models, 3 precisions, semantic analysis | INT4 = FP16 for kiosk; both models hallucinate; RAG essential |
 
 ---
 
 ## Appendix D: Sample INT4 vs FP16 Response Comparison
 
-This appendix provides verbatim response pairs from Qwen 2.5-7B at FP16 and INT4 precision across three representative scenarios. These examples illustrate the quality analysis summarized in Section 4 and detailed in the [Quality Comparison](semantic-quality-comparison.md) paper. All responses were generated with greedy decoding (temperature=0.0) using the kiosk system prompt on PTL iGPU.
+This appendix provides verbatim response pairs from Qwen 2.5-7B at FP16 and INT4 precision across three representative scenarios. These examples illustrate the quality analysis summarized in Section 4 and detailed in the [Quality Comparison](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQA-LUUweUBoTrERqU-m03nQAQICzMWRUe9ojeI1Fbb9sBM?e=6zOEuk) paper. All responses were generated with greedy decoding (temperature=0.0) using the kiosk system prompt on PTL iGPU.
 
 ### D.1 Simple Interaction: Customer Greeting
 
@@ -565,7 +565,7 @@ This appendix provides verbatim response pairs from Qwen 2.5-7B at FP16 and INT4
 
 **Assessment:** INT4 is near-identical to FP16 on this complex multi-turn diagnostic scenario. The only difference is a single synonym substitution ("correctly" vs "properly"), confirming that INT4 fully preserves conversational flow, diagnostic reasoning, and solution structure even in the most complex test scenario.
 
-> **Bottom line:** Across all three difficulty levels — simple, product-specific, and complex multi-turn — INT4 responses are indistinguishable from FP16 in quality, structure, and conversational appropriateness. The quality-speed tradeoff is indeed a false dilemma for bounded kiosk tasks. Full analysis across all 7 scenarios is available in the [Quality Comparison](semantic-quality-comparison.md) paper.
+> **Bottom line:** Across all three difficulty levels — simple, product-specific, and complex multi-turn — INT4 responses are indistinguishable from FP16 in quality, structure, and conversational appropriateness. The quality-speed tradeoff is indeed a false dilemma for bounded kiosk tasks. Full analysis across all 7 scenarios is available in the [Quality Comparison](https://intel-my.sharepoint.com/:w:/p/joshua_cork/IQA-LUUweUBoTrERqU-m03nQAQICzMWRUe9ojeI1Fbb9sBM?e=6zOEuk) paper.
 
 ---
 
