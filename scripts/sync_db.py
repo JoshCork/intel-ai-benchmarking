@@ -60,6 +60,11 @@ MACHINES = {
         "user": "noyce",
         "db_path": "/home/noyce/intel-bench/results/benchmarks.db",
     },
+    "koduri": {
+        "host": "100.92.51.84",
+        "user": "koduri",
+        "db_path": "/home/koduri/intel-bench/repo/results/benchmarks.db",
+    },
 }
 
 

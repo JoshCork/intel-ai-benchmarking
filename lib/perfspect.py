@@ -103,6 +103,7 @@ def parse_perfspect_json(json_path: Path) -> dict:
         "installed_memory": "",
         "bios_version": "",
         "kernel_version": "",
+        "pcie_slots": "",
         "insights": [],
     }
 
@@ -164,6 +165,22 @@ def parse_perfspect_json(json_path: Path) -> dict:
     if "Operating System" in data and data["Operating System"]:
         os_info = data["Operating System"][0]
         result["kernel_version"] = os_info.get("Kernel", "")
+
+    # PCIe slots — summarise in-use slots from SMBIOS data
+    # Each entry: {'Bus Address': '0000:00:01.0', 'Current Usage': 'In Use',
+    #              'Designation': 'PEG SLOT X8', 'Type': 'x8 PCI Express 5 x8'}
+    # Note: 'Type' encodes max and negotiated widths as reported by firmware;
+    # for actual negotiated link speed/width use `lspci -vvv` (LnkSta field).
+    if "PCIe" in data:
+        in_use = [s for s in data["PCIe"] if s.get("Current Usage") == "In Use"]
+        if in_use:
+            parts = []
+            for s in in_use:
+                slot_type = s.get("Type", "")
+                designation = s.get("Designation", "")
+                bus = s.get("Bus Address", "").lstrip("0000:")
+                parts.append(f"{slot_type} [{designation}] @ {bus}")
+            result["pcie_slots"] = "; ".join(parts)
 
     # Insights (recommendations)
     if "Insights" in data:

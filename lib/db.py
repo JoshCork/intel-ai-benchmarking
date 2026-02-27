@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS system_configs (
     installed_memory TEXT,      -- e.g. "32GB (8x4GB LPDDR5 8533MT/s)"
     bios_version TEXT,
     kernel_version TEXT,
+    pcie_slots TEXT,            -- in-use PCIe slots summary from PerfSpect SMBIOS data
     -- Full data
     perfspect_json TEXT,        -- complete PerfSpect JSON for reproducibility
     insights_json TEXT          -- PerfSpect recommendations
@@ -136,6 +137,7 @@ MIGRATIONS = [
     """ALTER TABLE benchmark_runs ADD COLUMN system_config_id INTEGER
        REFERENCES system_configs(id)""",
     """ALTER TABLE benchmark_runs ADD COLUMN experiment_name TEXT""",
+    """ALTER TABLE system_configs ADD COLUMN pcie_slots TEXT""",
 ]
 
 
@@ -337,9 +339,9 @@ class BenchmarkDB:
             """INSERT INTO system_configs
             (machine_id, captured_at, perfspect_version,
              scaling_governor, energy_perf_bias, turbo_boost, c_states,
-             installed_memory, bios_version, kernel_version,
+             installed_memory, bios_version, kernel_version, pcie_slots,
              perfspect_json, insights_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 machine_id,
                 datetime.now(timezone.utc).isoformat(),
@@ -351,6 +353,7 @@ class BenchmarkDB:
                 perfspect_data.get("installed_memory", ""),
                 perfspect_data.get("bios_version", ""),
                 perfspect_data.get("kernel_version", ""),
+                perfspect_data.get("pcie_slots", ""),
                 json.dumps(perfspect_data.get("full_json")) if perfspect_data.get("full_json") else None,
                 json.dumps(perfspect_data.get("insights")) if perfspect_data.get("insights") else None,
             ),
