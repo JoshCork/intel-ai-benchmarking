@@ -82,8 +82,8 @@ def export_model(
     print(f"  Command: {' '.join(cmd)}")
     print(f"  Output:  {out_path}")
 
-    # GPTQ needs more time — 4h timeout
-    timeout = 14400 if algorithm != "default" else 7200
+    # GPTQ needs more time — 8h timeout
+    timeout = 28800 if algorithm != "default" else 7200
     result = subprocess.run(cmd, timeout=timeout)
     if result.returncode != 0:
         print(f"  ERROR: Export failed with code {result.returncode}")
